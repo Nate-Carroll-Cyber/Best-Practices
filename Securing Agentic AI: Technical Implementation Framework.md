@@ -1,6 +1,6 @@
 # Securing Agentic AI: Technical Implementation Framework v1.1 (Merged)
 
-> **Merge note:** This document is a strict superset of the original v1.0. It preserves the full technical depth of the detailed source (all code, schemas, tables, appendices) and grafts in the net-new conceptual material from the revised draft: the Agent 3SRM governance model, the 10-Layer Reference Architecture and Agentic Control Loop, Sub-Agent Delegation rules, Context Engineering threats, Intent Drift detail, the MAESTRO v2.0 process, and AARM benchmarking. Net-new sections are flagged with **⊕ ADDED**.
+> **Merge note:** This document is a strict superset of the original v1.0. It preserves the full technical depth of the detailed source (all code, schemas, tables, appendices) and grafts in the net-new conceptual material from the revised draft: the Agent 3SRM governance model, the 10-Layer Reference Architecture and Agentic Control Loop, Sub-Agent Delegation rules, Context Engineering threats, Intent Drift detail, the MAESTRO v2.0 process, and AARM benchmarking. Net-new sections are flagged with ****.
 
 ## Strategic Header & Program Mandate
 
@@ -93,7 +93,7 @@ The transition from AI Assistants (advisory) to AI Agents (execution) requires a
 
 Secure agentic deployment is a cross-functional responsibility requiring defined leadership roles.
 
-### 2.1 Agent Shared Security and Safety Responsibility Model (Agent 3SRM) ⊕ ADDED
+### 2.1 Agent Shared Security and Safety Responsibility Model (Agent 3SRM) 
 
 The Agent Shared Security and Safety Responsibility Model (Agent 3SRM) expands traditional shared-responsibility models into a six-role supply chain for the agentic context.
 
@@ -118,7 +118,7 @@ The Agent Shared Security and Safety Responsibility Model (Agent 3SRM) expands t
 
 Traditional perimeter defense is insufficient for autonomous entities. Architecture must follow a **Zero-Trust model** where no agent is trusted by default.
 
-### 3.1 10-Layer Agentic Reference Architecture ⊕ ADDED
+### 3.1 10-Layer Agentic Reference Architecture 
 
 Architecture adheres to the standard 10-Layer Agentic Reference Architecture organized into three operational domains:
 
@@ -126,7 +126,7 @@ Architecture adheres to the standard 10-Layer Agentic Reference Architecture org
 2. **Domain 2: Environment and Execution (Layers 4-6):** Orchestration mechanisms, containerized deployment, and external tool/ecosystem interfaces.
 3. **Domain 3: Agency, Governance, and Accountability (Layers 7-10):** Horizontal, cross-cutting layers spanning Domains 1 and 2 to govern Identity, Safety, Monitoring, and Compliance.
 
-### 3.2 Agentic Control Loop ⊕ ADDED
+### 3.2 Agentic Control Loop 
 
 Security must mediate the formal **Agentic Control Loop** applied at each execution cycle:
 
@@ -188,7 +188,7 @@ Securing autonomous AI agents requires a paradigm shift from traditional perimet
   └── revoked: write:database.*, send:email, execute:shell
   ```
 
-- **Sub-Agent Delegation Responsibility Rules** ⊕ ADDED
+- **Sub-Agent Delegation Responsibility Rules** 
   - **Permission Narrowing:** Each delegation hop to a sub-agent must strictly narrow (never expand) the permission scope. A sub-agent cannot have more permissions than the agent that created it.
   - **Provenance Tracking:** Every sub-agent must carry provenance metadata linking it to its parent agent, traceable back to the ultimate Agent Owner.
   - **Depth Limits:** The Agent Owner must define and enforce maximum delegation depth limits to prevent unmanageable accountability chains and resource consumption risks.
@@ -1272,14 +1272,14 @@ class SafeMCPErrorHandling:
 
 Context windows serve as working memory, and vulnerabilities can be introduced through dynamic selection, compression, and isolation of context.
 
-#### Context Engineering Threats ⊕ ADDED
+#### Context Engineering Threats 
 
 - **Context Poisoning:** Injection of malicious information into the context window via poisoned memory entries or adversarial tool outputs.
 - **Context Distraction:** Superfluous information intentionally injected to cause the AI to lose focus on primary tasks or security constraints.
 - **Context Confusion:** Contradictory information (e.g., version mismatches, cross-domain conflicts) injected to produce unclear outputs or exploit ambiguity.
 - **Compression-Induced Information Loss:** Aggressive context compression stripping security-critical markers, leading to policy bypasses.
 
-**Context Engineering Mitigations:** ⊕ ADDED
+**Context Engineering Mitigations:** 
 - Preserve security metadata during token compression and enforce hard token limits to prevent overflow attacks.
 - Ensure context freshness by defining specific Time-To-Live (TTL) values for different categories of memory data.
 
@@ -1854,7 +1854,7 @@ Context windows serve as working memory, and vulnerabilities can be introduced t
 
 **Requirement**: Establish behavioral baselines and alert operators on deviations or goal hijacking, paying close attention to semantic drift and authorization anomalies.
 
-**Intent Drift Monitoring:** ⊕ ADDED
+**Intent Drift Monitoring:** 
 - Implement specific drift threshold sensitivities to measure detection rates versus false positive rates across different semantic distance thresholds.
 - Monitor deferral resolution rates: track what fraction of deferred actions correctly resolve to a deny or escalate instead of hanging or incorrectly allowing operations.
 - Compute Z-scores for current metric distributions against baseline behaviors. A deviation exceeding 3 standard deviations triggers circuit breakers.
@@ -2025,7 +2025,7 @@ Actively monitor execution patterns. If a tool typically used for data reading i
 
 **Requirement**: Use specialized frameworks to analyze risks at every architectural layer.
 
-#### MAESTRO v2.0 Process (10-Layer Integration) ⊕ ADDED
+#### MAESTRO v2.0 Process (10-Layer Integration) 
 
 The MAESTRO v2.0 framework explicitly leverages the 10-layer architecture, mapping threats across the three enterprise domains:
 
@@ -2450,7 +2450,7 @@ The MAESTRO v2.0 framework explicitly leverages the 10-layer architecture, mappi
 
 **Requirement**: Regularly stress-test agents against known attack patterns before and after production. Validation must answer if a system catches real compositional exfiltration attempts, intent drift sequences, and injection attacks within realistic sessions.
 
-#### AARM Benchmarking Metrics Integration ⊕ ADDED
+#### AARM Benchmarking Metrics Integration 
 - **Detection Rate:** Fraction of labeled malicious actions correctly intercepted.
 - **False Positive Rate:** Ensure the rate of benign sessions incorrectly blocked remains within acceptable thresholds (e.g., <5% for Tier 4 readiness).
 - **Step-Up Calibration:** Measure how often ambiguous scenarios correctly route to `STEP_UP` (human oversight) rather than incorrectly defaulting to binary allow/deny decisions.
@@ -3210,8 +3210,8 @@ The framework ensures alignment with key EU AI Act requirements for high-risk AI
 - **CoT**: Chain of Thought (agent reasoning steps)
 - **HITL**: Human-in-the-Loop (human approval for sensitive actions)
 - **AIBOM**: AI Bill of Materials (supply chain transparency)
-- **Agent 3SRM**: Agent Shared Security and Safety Responsibility Model (six-role agentic supply-chain responsibility model) ⊕ ADDED
-- **AARM**: Agentic AI Risk Metrics benchmarking (detection rate, false positive rate, step-up calibration) ⊕ ADDED
+- **Agent 3SRM**: Agent Shared Security and Safety Responsibility Model (six-role agentic supply-chain responsibility model) 
+- **AARM**: Agentic AI Risk Metrics benchmarking (detection rate, false positive rate, step-up calibration) 
 
 ### C. References
 
