@@ -1,8 +1,4 @@
-# Securing Agentic AI: Technical Implementation Framework v1.1 (Merged)
-
-> **Merge note:** This document is a strict superset of the original v1.0. It preserves the full technical depth of the detailed source (all code, schemas, tables, appendices) and grafts in the net-new conceptual material from the revised draft: the Agent 3SRM governance model, the 10-Layer Reference Architecture and Agentic Control Loop, Sub-Agent Delegation rules, Context Engineering threats, Intent Drift detail, the MAESTRO v2.0 process, and AARM benchmarking. Net-new sections are flagged with ****.
-
-## Strategic Header & Program Mandate
+# Securing Agentic AI: Technical Implementation Framework v1.1
 
 This document establishes the strategic architectural requirements and operational processes for the secure deployment of Agentic AI within the organization. This program is designed to move beyond traditional Large Language Model (LLM) assistant patterns toward autonomous agents capable of independent reasoning and multi-step execution while ensuring mandatory compliance with the EU AI Act and alignment with the NIST AI Risk Management Framework (RMF).
 
