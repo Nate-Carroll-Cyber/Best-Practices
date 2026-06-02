@@ -1,4 +1,6 @@
-# Securing Agentic AI: Technical Implementation Framework v1.0
+# Securing Agentic AI: Technical Implementation Framework v1.1 (Merged)
+
+> **Merge note:** This document is a strict superset of the original v1.0. It preserves the full technical depth of the detailed source (all code, schemas, tables, appendices) and grafts in the net-new conceptual material from the revised draft: the Agent 3SRM governance model, the 10-Layer Reference Architecture and Agentic Control Loop, Sub-Agent Delegation rules, Context Engineering threats, Intent Drift detail, the MAESTRO v2.0 process, and AARM benchmarking. Net-new sections are flagged with **⊕ ADDED**.
 
 ## Strategic Header & Program Mandate
 
@@ -12,13 +14,13 @@ The transition from AI Assistants (advisory) to AI Agents (execution) requires a
 
 ### I. GOVERNANCE & MANDATE
 - 1. Program Mandate & Regulatory Alignment
-- 2. Governance & Accountability Structure  
-- 3. Secure Agentic Architecture (Zero Trust Model)
+- 2. Governance & Accountability Structure (incl. Agent 3SRM)
+- 3. Secure Agentic Architecture (Zero Trust Model & 10-Layer Framework)
 
 ### II. TECHNICAL SECURITY ARCHITECTURE
 - **1. Identity and Access Management (IAM)**
   - 1.1 Machine Identity and Agent Identification
-  - 1.2 Least Agency and Least Privilege
+  - 1.2 Least Agency, Least Privilege, and Sub-Agent Delegation
   - 1.3 Just-in-Time (JIT) Authorization
   - 1.4 Secure Agent Discovery (Agent Name Service)
   - 1.5 Mutual Authentication (mTLS)
@@ -29,7 +31,7 @@ The transition from AI Assistants (advisory) to AI Agents (execution) requires a
   - 2.3 Micro-segmentation
   - 2.4 Circuit Breakers
 
-- **3. Model Context Protocol (MCP) Security Architecture** ⭐ NEW
+- **3. Model Context Protocol (MCP) Security Architecture**
   - 3.0 MCP Overview and Threat Landscape
   - 3.1 MCP Architecture: STDIO vs. Streamable HTTP
   - 3.2 Tool Manifest Validation and Rug Pull Prevention
@@ -40,8 +42,8 @@ The transition from AI Assistants (advisory) to AI Agents (execution) requires a
   - 3.7 Advanced Authentication: Token Passthrough Prevention
   - 3.8 Safe Error Handling for MCP Servers
 
-- **4. Input/Output Integrity and Guardrails**
-  - 4.1 Threat Model: Natural Language Injection
+- **4. Input/Output Integrity, Guardrails, and Context Security**
+  - 4.1 Threat Model: Natural Language Injection & Context Engineering
   - 4.2 Input Segregation
   - 4.3 Schema Enforcement
   - 4.4 Multi-Layered Guardrails
@@ -50,22 +52,22 @@ The transition from AI Assistants (advisory) to AI Agents (execution) requires a
 - **5. Monitoring and Observability**
   - 5.1 Immutable Audit Logging
   - 5.2 Traceable Reasoning
-  - 5.3 Anomaly Detection
-  - 5.4 MCP-Specific Monitoring: Tool Behavior Anomalies ⭐ NEW
+  - 5.3 Anomaly Detection & Intent Drift
+  - 5.4 MCP-Specific Monitoring: Tool Behavior Anomalies
 
 ### IV. PROCESS & GOVERNANCE
 - **6. Process and Governance Best Practices**
-  - 6.1 Agentic Threat Modeling
+  - 6.1 Agentic Threat Modeling (MAESTRO Integration)
   - 6.2 Human-in-the-Loop (HITL)
   - 6.3 Supply Chain Transparency
-  - 6.4 Continuous Red Teaming
+  - 6.4 Continuous Red Teaming & AARM Benchmarking
   - 6.5 Phased Deployment
 
 ### V. IMPLEMENTATION & REFERENCE
 - 7. Implementation Roadmap
   - 7.1 Security Implementation Priority
-  - 7.2 Taxonomy Alignment: Framework Controls to Integrated AI Risk Taxonomy ⭐ NEW
-  - 7.3 MCP-Specific Security Tools ⭐ NEW
+  - 7.2 Taxonomy Alignment: Framework Controls to Integrated AI Risk Taxonomy
+  - 7.3 MCP-Specific Security Tools
 - 8. Appendices
   - A. Compliance Mappings
   - B. Glossary
@@ -91,19 +93,44 @@ The transition from AI Assistants (advisory) to AI Agents (execution) requires a
 
 Secure agentic deployment is a cross-functional responsibility requiring defined leadership roles.
 
-| Role | Responsibility |
+### 2.1 Agent Shared Security and Safety Responsibility Model (Agent 3SRM) ⊕ ADDED
+
+The Agent Shared Security and Safety Responsibility Model (Agent 3SRM) expands traditional shared-responsibility models into a six-role supply chain for the agentic context.
+
+**Agent Owner Principle:** The Agent Owner bears ultimate, non-delegable accountability and liability for all actions performed by the agent and any sub-agents it creates.
+
+### 2.2 Leadership and Supply-Chain Roles
+
+| Role / Entity | Responsibility |
 |------|-----------------|
-| **AI GRC Board** | Define risk tolerance and business objectives |
-| **Chief AI Officer (CAIO)** | Model performance, ethical alignment, and robustness |
-| **CISO** | Overall security, vulnerability management, and incident response |
-| **Data Protection Officer (DPO)** | Compliance with GDPR and EU AI Act data governance |
-| **AI Ethics Committee** | Internal review of sensitive use cases and impact assessments |
+| **Agent Owner** ⊕ | Bears non-delegable ultimate accountability for all agent actions, defining policies, guardrails, and acceptable use. |
+| **Agent Service Provider (AP)** ⊕ | Develops, maintains, and delivers agents as a service, including design integrity and skills. |
+| **Tool Provider** ⊕ | Develops and maintains external tools/MCP servers accessed by agents; responsible for API security and supply chain transparency. |
+| **AI GRC Board** | Define risk tolerance and business objectives. |
+| **Chief AI Officer (CAIO)** | Model performance, ethical alignment, and robustness. |
+| **CISO** | Overall security, vulnerability management, and incident response. |
+| **Data Protection Officer (DPO)** | Compliance with GDPR and EU AI Act data governance. |
+| **AI Ethics Committee** | Internal review of sensitive use cases and impact assessments. |
 
 ---
 
-## 3. Secure Agentic Architecture (Zero Trust Model)
+## 3. Secure Agentic Architecture (Zero Trust Model & 10-Layer Framework)
 
 Traditional perimeter defense is insufficient for autonomous entities. Architecture must follow a **Zero-Trust model** where no agent is trusted by default.
+
+### 3.1 10-Layer Agentic Reference Architecture ⊕ ADDED
+
+Architecture adheres to the standard 10-Layer Agentic Reference Architecture organized into three operational domains:
+
+1. **Domain 1: Infrastructure, Intelligence & Knowledge (Layers 1-3):** Foundational compute capabilities, the Cognitive Core (planner, reasoner), and Memory/Knowledge systems.
+2. **Domain 2: Environment and Execution (Layers 4-6):** Orchestration mechanisms, containerized deployment, and external tool/ecosystem interfaces.
+3. **Domain 3: Agency, Governance, and Accountability (Layers 7-10):** Horizontal, cross-cutting layers spanning Domains 1 and 2 to govern Identity, Safety, Monitoring, and Compliance.
+
+### 3.2 Agentic Control Loop ⊕ ADDED
+
+Security must mediate the formal **Agentic Control Loop** applied at each execution cycle:
+
+`PERCEIVE` → `REMEMBER` → `THINK` → `AUTHENTICATE AND AUTHORIZE` → `ACT` → `FEEDBACK` → `REFLECT` → `LOOP`
 
 ---
 
@@ -140,9 +167,9 @@ Securing autonomous AI agents requires a paradigm shift from traditional perimet
   - ❌ Generic or descriptive identities (e.g., `agent-1`, `automation-bot`)
   - ❌ Long-lived static API keys or bearer tokens
 
-### 1.2 Least Agency and Least Privilege
+### 1.2 Least Agency, Least Privilege, and Sub-Agent Delegation
 
-**Requirement**: Agents receive only the minimum permissions and tool invocations necessary for their declared task.
+**Requirement**: Agents receive only the minimum permissions and tool invocations necessary for their declared task. Furthermore, in multi-agent architectures, dynamic delegation requires strict accountability chains.
 
 **Technical Implementation**:
 
@@ -160,6 +187,12 @@ Securing autonomous AI agents requires a paradigm shift from traditional perimet
   │   └── file_size_limit: 100MB
   └── revoked: write:database.*, send:email, execute:shell
   ```
+
+- **Sub-Agent Delegation Responsibility Rules** ⊕ ADDED
+  - **Permission Narrowing:** Each delegation hop to a sub-agent must strictly narrow (never expand) the permission scope. A sub-agent cannot have more permissions than the agent that created it.
+  - **Provenance Tracking:** Every sub-agent must carry provenance metadata linking it to its parent agent, traceable back to the ultimate Agent Owner.
+  - **Depth Limits:** The Agent Owner must define and enforce maximum delegation depth limits to prevent unmanageable accountability chains and resource consumption risks.
+  - **Lifecycle Binding:** Sub-agents are bound to the parent's lifecycle; when a parent terminates, sub-agents must terminate or be explicitly re-parented. Orphaned agents are prohibited.
 
 - **Tool Allowlisting**
   - Maintain explicit manifest of allowed tool calls per agent
@@ -1227,15 +1260,28 @@ class SafeMCPErrorHandling:
 
 ---
 
-## 4. Input/Output Integrity and Guardrails
+## 4. Input/Output Integrity, Guardrails, and Context Security
 
-### 4.1 Threat Model: Natural Language Injection
+### 4.1 Threat Model: Natural Language Injection & Context Engineering
 
 **Vulnerability**: Agents cannot reliably distinguish between system instructions and untrusted data, enabling:
 - Prompt injection attacks
 - Goal hijacking
 - Privilege escalation
 - Credential exfiltration
+
+Context windows serve as working memory, and vulnerabilities can be introduced through dynamic selection, compression, and isolation of context.
+
+#### Context Engineering Threats ⊕ ADDED
+
+- **Context Poisoning:** Injection of malicious information into the context window via poisoned memory entries or adversarial tool outputs.
+- **Context Distraction:** Superfluous information intentionally injected to cause the AI to lose focus on primary tasks or security constraints.
+- **Context Confusion:** Contradictory information (e.g., version mismatches, cross-domain conflicts) injected to produce unclear outputs or exploit ambiguity.
+- **Compression-Induced Information Loss:** Aggressive context compression stripping security-critical markers, leading to policy bypasses.
+
+**Context Engineering Mitigations:** ⊕ ADDED
+- Preserve security metadata during token compression and enforce hard token limits to prevent overflow attacks.
+- Ensure context freshness by defining specific Time-To-Live (TTL) values for different categories of memory data.
 
 **Technical Implementation**:
 
@@ -1804,9 +1850,14 @@ class SafeMCPErrorHandling:
   Operator Note: "Reasoning aligned with user request"
   ```
 
-### 5.3 Anomaly Detection
+### 5.3 Anomaly Detection & Intent Drift
 
-**Requirement**: Establish behavioral baselines and alert operators on deviations or goal hijacking.
+**Requirement**: Establish behavioral baselines and alert operators on deviations or goal hijacking, paying close attention to semantic drift and authorization anomalies.
+
+**Intent Drift Monitoring:** ⊕ ADDED
+- Implement specific drift threshold sensitivities to measure detection rates versus false positive rates across different semantic distance thresholds.
+- Monitor deferral resolution rates: track what fraction of deferred actions correctly resolve to a deny or escalate instead of hanging or incorrectly allowing operations.
+- Compute Z-scores for current metric distributions against baseline behaviors. A deviation exceeding 3 standard deviations triggers circuit breakers.
 
 **Technical Implementation**:
 
@@ -1962,15 +2013,28 @@ class SafeMCPErrorHandling:
               # Add to monitoring dashboard
   ```
 
+### 5.4 MCP-Specific Monitoring: Tool Behavior Anomalies
+
+Actively monitor execution patterns. If a tool typically used for data reading initiates unauthorized network callbacks, the session is quarantined and flagged.
+
 ---
 
 ## 6. Process and Governance Best Practices
 
-### 6.1 Agentic Threat Modeling
+### 6.1 Agentic Threat Modeling (MAESTRO Integration)
 
 **Requirement**: Use specialized frameworks to analyze risks at every architectural layer.
 
-**Technical Implementation**:
+#### MAESTRO v2.0 Process (10-Layer Integration) ⊕ ADDED
+
+The MAESTRO v2.0 framework explicitly leverages the 10-layer architecture, mapping threats across the three enterprise domains:
+
+- **Step 1: System Decomposition:** Map components to the 10 layers and identify multi-agent interactions and trust boundaries.
+- **Step 2: Layer-Specific Threat Analysis:** Use specific catalogs to evaluate identity forgery (Layer 7), orchestration failure (Layer 4), context poisoning (Layer 3), and infrastructure compromise (Layer 1).
+- **Step 3: Cross-Layer Path Analysis:** Map cascading failures across boundaries (e.g., Supply Chain to Data Poisoning, Multi-Agent Compromise via A2A protocols).
+- **Step 4: Mitigation and Ownership Assignment:** Assign mitigations via the 3SRM matrix (CSP/MP/OSP/AP/AIC).
+
+#### MAESTRO Framework Application (Layered Threat Catalog)
 
 - **MAESTRO Framework Application**
   ```
@@ -2382,9 +2446,14 @@ class SafeMCPErrorHandling:
           return mitigations
   ```
 
-### 6.4 Continuous Red Teaming
+### 6.4 Continuous Red Teaming & AARM Benchmarking
 
-**Requirement**: Regularly stress-test agents against known attack patterns before and after production.
+**Requirement**: Regularly stress-test agents against known attack patterns before and after production. Validation must answer if a system catches real compositional exfiltration attempts, intent drift sequences, and injection attacks within realistic sessions.
+
+#### AARM Benchmarking Metrics Integration ⊕ ADDED
+- **Detection Rate:** Fraction of labeled malicious actions correctly intercepted.
+- **False Positive Rate:** Ensure the rate of benign sessions incorrectly blocked remains within acceptable thresholds (e.g., <5% for Tier 4 readiness).
+- **Step-Up Calibration:** Measure how often ambiguous scenarios correctly route to `STEP_UP` (human oversight) rather than incorrectly defaulting to binary allow/deny decisions.
 
 **Technical Implementation**:
 
@@ -3141,6 +3210,8 @@ The framework ensures alignment with key EU AI Act requirements for high-risk AI
 - **CoT**: Chain of Thought (agent reasoning steps)
 - **HITL**: Human-in-the-Loop (human approval for sensitive actions)
 - **AIBOM**: AI Bill of Materials (supply chain transparency)
+- **Agent 3SRM**: Agent Shared Security and Safety Responsibility Model (six-role agentic supply-chain responsibility model) ⊕ ADDED
+- **AARM**: Agentic AI Risk Metrics benchmarking (detection rate, false positive rate, step-up calibration) ⊕ ADDED
 
 ### C. References
 
