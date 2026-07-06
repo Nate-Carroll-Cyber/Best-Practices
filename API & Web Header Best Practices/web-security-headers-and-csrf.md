@@ -164,6 +164,67 @@ The short version for your checklist:
 
 ---
 
+## Server-Side Request Forgery (SSRF) Protections
+
+SSRF occurs when an attacker can influence a server-side component to make HTTP requests to unintended destinations—internal services, cloud metadata endpoints, or external attacker-controlled servers. Any component that accepts a URL, hostname, or IP as input and makes a backend request is a potential SSRF vector.
+
+### Common SSRF Entry Points
+
+```text
+Webhook URLs and callback configurations
+PDF/image renderers that fetch remote resources
+URL preview or link unfurling features
+File import from URL (CSV, XML, ICAL)
+API integrations that proxy or forward requests
+SSO/OAuth redirect and token exchange endpoints
+AI/RAG pipelines fetching external documents or tool endpoints
+```
+
+### Prevention Controls
+
+**Input Validation (Required):**
+- Parse and validate URLs before making any request; reject schemes other than `https` (and `http` only where explicitly required)
+- Resolve the hostname to an IP address *before* making the request, then validate the resolved IP against a denylist
+- Block requests to RFC 1918 private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), loopback (`127.0.0.0/8`), link-local (`169.254.0.0/16`), and IPv6 equivalents (`::1`, `fc00::/7`, `fe80::/10`)
+- Block cloud metadata endpoints explicitly: `169.254.169.254`, `fd00:ec2::254`, `metadata.google.internal`
+
+**DNS Rebinding Defense:**
+- Resolve DNS once, pin the IP, and make the request to the pinned IP—do not allow the runtime to re-resolve between validation and connection
+- Set short DNS TTLs on internal infrastructure, but do not trust TTLs from external domains
+
+**Network-Layer Controls:**
+- Place components that make outbound requests in a network segment with egress filtering (firewall or security group)
+- Allowlist specific outbound destinations where possible; default-deny all other egress
+- Use a forward proxy for outbound HTTP requests with destination logging and policy enforcement
+
+**Response Handling:**
+- Do not return raw responses from backend-fetched URLs to the client; parse and extract only the expected data
+- Limit response size and follow redirects cautiously—validate each redirect destination against the same denylist
+- Set aggressive timeouts to prevent slow-loris-style internal port scanning
+
+### Cloud Metadata Hardening
+
+| Cloud Provider | Mitigation |
+| --- | --- |
+| **AWS** | Enforce IMDSv2 (`HttpTokens: required`); this requires a `PUT` request with a TTL-limited token header, which SSRF via `GET` cannot satisfy |
+| **GCP** | Require `Metadata-Flavor: Google` header on metadata requests; block `metadata.google.internal` at the network level |
+| **Azure** | Require `Metadata: true` header; restrict IMDS access via network policy where supported |
+
+### Detection & Testing
+
+**Test Cases:**
+- Submit `http://127.0.0.1`, `http://[::1]`, `http://169.254.169.254/latest/meta-data/` in any URL input field
+- Try decimal IP (`http://2130706433` = `127.0.0.1`), octal (`http://0177.0.0.1`), and hex (`http://0x7f000001`) representations
+- Test DNS rebinding: use a domain that alternates between an external IP and `127.0.0.1`
+- Test redirect chains: submit an external URL that 302-redirects to an internal address
+- Try non-HTTP schemes: `file:///etc/passwd`, `gopher://`, `dict://`
+
+**Logging:**
+- Log all outbound requests made by server-side components: destination IP, resolved hostname, port, scheme, response code, and the originating feature/user
+- Alert on any outbound connection to private IP ranges, metadata endpoints, or unexpected ports
+
+---
+
 ## Related
 
 - [Content Security Policy (CSP) Best Practices](content-security-policy.md)
