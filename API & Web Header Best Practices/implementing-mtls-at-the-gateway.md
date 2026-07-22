@@ -15,7 +15,7 @@ Backend API
   └── receives request only if mTLS succeeded
 ```
 
-The backend should not trust a random `X-Client-Cert` header from the internet. The gateway should strip any inbound client-identity headers, validate the certificate itself, then add trusted identity metadata only when forwarding to the API.
+The backend should not trust a random `X-Client-Cert` header from the internet. The gateway must validate the certificate itself and set identity headers from its own TLS variables when forwarding — never pass inbound client-identity headers through.
 
 ## 2. NGINX mTLS example
 
@@ -33,25 +33,32 @@ server {
     ssl_verify_client on;
     ssl_verify_depth 2;
 
+    # Revocation list for the client CA (nginx does not do OCSP
+    # checks on client certs; use a CRL or short-lived certs)
+    ssl_crl /etc/nginx/ca/client-ca.crl;
+
     ssl_protocols TLSv1.3 TLSv1.2;
 
     location / {
-        # Remove any spoofed inbound identity headers
-        proxy_set_header X-Client-Cert-Verify "";
-        proxy_set_header X-Client-Cert-Subject "";
-        proxy_set_header X-Client-Cert-Fingerprint "";
-
-        # Add trusted client certificate details after mTLS validation
-        proxy_set_header X-Client-Cert-Verify $ssl_client_verify;
-        proxy_set_header X-Client-Cert-Subject $ssl_client_s_dn;
+        # proxy_set_header REPLACES any same-named header from the
+        # client, so setting these from TLS variables both strips
+        # spoofed inbound values and injects the trusted ones.
+        proxy_set_header X-Client-Cert-Verify      $ssl_client_verify;
+        proxy_set_header X-Client-Cert-Subject     $ssl_client_s_dn;
         proxy_set_header X-Client-Cert-Fingerprint $ssl_client_fingerprint;
+
+        # Full cert (URL-encoded PEM) if the backend must check
+        # certificate-bound tokens (RFC 8705 x5t#S256):
+        proxy_set_header X-Client-Cert             $ssl_client_escaped_cert;
 
         proxy_pass http://backend_api;
     }
 }
 ```
 
-The key directives are `ssl_client_certificate`, which defines the trusted CA certificates used to verify clients, and `ssl_verify_client`, which controls whether client certificate verification is required. ([Nginx][2])
+The key directives are `ssl_client_certificate`, which defines the trusted CA certificates used to verify clients, and `ssl_verify_client`, which controls whether client certificate verification is required. ([Nginx][2]) For a gradual rollout, `ssl_verify_client optional` lets the handshake succeed without a cert while `$ssl_client_verify` tells the backend whether to accept the request — switch to `on` once all clients have certs.
+
+Note: `$ssl_client_fingerprint` is the SHA-1 fingerprint. It's fine as a log/correlation field, but for token binding compute the SHA-256 thumbprint from the forwarded certificate instead.
 
 ## 3. Client-side POST with mTLS
 
@@ -117,18 +124,18 @@ This gives you transport authentication between workloads, but you should still 
 
 ## 5. OAuth + mTLS-bound tokens
 
-For high-assurance APIs, combine mTLS with OAuth so the access token is bound to the client certificate. RFC 8705 defines OAuth client authentication and certificate-bound access and refresh tokens using mutual TLS with X.509 certificates. ([RFC Editor][4])
+For high-assurance APIs, combine mTLS with OAuth so the access token is bound to the client certificate. RFC 8705 defines OAuth client authentication and certificate-bound access and refresh tokens using mutual TLS with X.509 certificates. The binding is carried in the token's `cnf` (confirmation) claim as `x5t#S256` — the base64url-encoded SHA-256 thumbprint of the client certificate. ([RFC Editor][4])
 
-The API should validate both:
+The API should validate all of:
 
 ```text
 1. The client certificate is trusted and currently valid.
 2. The access token is valid.
-3. The token is bound to the presented client certificate.
+3. The token's cnf/x5t#S256 thumbprint matches the presented client certificate.
 4. The token audience and scopes allow this API action.
 ```
 
-That prevents a stolen bearer token from being replayed by a client that does not possess the matching private key.
+That prevents a stolen bearer token from being replayed by a client that does not possess the matching private key. When TLS terminates at the gateway, the gateway must forward the client certificate (or its SHA-256 thumbprint) over a trusted channel so the backend can perform check 3.
 
 ## 6. Hardening checklist
 
@@ -138,10 +145,10 @@ That prevents a stolen bearer token from being replayed by a client that does no
 - Validate SAN/service identity, not just CN.
 - Use short-lived certs where possible.
 - Rotate client certs automatically.
-- Revoke compromised certs.
+- Revoke compromised certs (CRL at the gateway; short TTLs where CRL/OCSP is impractical).
 - Log certificate subject, issuer, serial, fingerprint, and mapped identity.
 - Fail closed when cert validation fails.
-- Strip spoofable identity headers at the edge.
+- Set identity headers only from gateway TLS variables; never forward inbound ones.
 - Do not pass raw client cert identity through untrusted networks.
 - Restrict backend access so only the gateway/mesh can reach it.
 - Keep OAuth/JWT authorization checks even when mTLS succeeds.
@@ -159,7 +166,7 @@ Application logic proves the caller can perform this action on this object.
 [1]: https://docs.nginx.com/nginx-instance-manager/system-configuration/secure-traffic/ "Secure client access and network traffic | NGINX Documentation"
 [2]: https://nginx.org/en/docs/http/ngx_http_ssl_module.html "Module ngx_http_ssl_module"
 [3]: https://istio.io/latest/docs/reference/config/security/peer_authentication/ "PeerAuthentication"
-[4]: https://www.rfc-editor.org/info/rfc8705/ "RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication ..."
+[4]: https://www.rfc-editor.org/info/rfc8705/ "RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access Tokens"
 
 ---
 
