@@ -1,6 +1,6 @@
 # Calling a Protected API with a Token
 
-Assuming you mean **calling a protected API with a token**, the solid pattern is:
+The solid pattern for calling a protected API with a token:
 
 ```http
 POST /v1/payments HTTP/1.1
@@ -19,9 +19,9 @@ X-Request-ID: 3d3d3f8e-91ff-4f92-9b18-9a7c3df42a12
 }
 ```
 
-The token should go in the **`Authorization: Bearer` header**, not in the URL, query string, or JSON body. RFC 6750 defines bearer-token usage for OAuth-protected resources and uses the authorization request header as the standard method; it also requires TLS for bearer-token use. ([IETF Datatracker][1]) OWASP’s REST guidance also recommends HTTPS-only APIs because it protects credentials such as API keys and JWTs in transit. ([OWASP Cheat Sheet Series][2])
+The token should go in the **`Authorization: Bearer` header**, not in the URL, query string, or JSON body. RFC 6750 defines bearer-token usage for OAuth-protected resources with the authorization header as the primary method — it technically also permits a form-encoded body parameter and a query parameter, but explicitly discourages the query form because URLs leak through logs and history. It also requires TLS for bearer-token use. ([IETF Datatracker][1]) OWASP's REST guidance also recommends HTTPS-only APIs because it protects credentials such as API keys and JWTs in transit. ([OWASP Cheat Sheet Series][2])
 
-For a higher-assurance machine-to-machine API, use the same POST but add **mTLS at the transport layer**. The client certificate is not usually sent as an application header; it is negotiated during TLS, and the API gateway maps the certificate identity to the client/service identity.
+For a higher-assurance machine-to-machine API, use the same POST but add **mTLS at the transport layer**. The client certificate is not sent as an application header; it is negotiated during TLS, and the API gateway maps the certificate identity to the client/service identity. See [Implementing mTLS at the Gateway](mtls-at-the-gateway.md).
 
 ```bash
 curl --tlsv1.3 \
@@ -41,7 +41,7 @@ curl --tlsv1.3 \
   }'
 ```
 
-A good API response would avoid caching sensitive data and return a minimal response:
+A good API response avoids caching sensitive data and returns a minimal body:
 
 ```http
 HTTP/1.1 201 Created
@@ -56,7 +56,19 @@ X-Request-ID: 3d3d3f8e-91ff-4f92-9b18-9a7c3df42a12
 }
 ```
 
-Server-side, the API should validate:
+## Error responses
+
+RFC 6750 also defines how the API should reject bad tokens: a `401` with a `WWW-Authenticate` challenge and a machine-readable error code — `invalid_token` for expired/malformed/revoked tokens, `insufficient_scope` (with `403`) when the token is valid but lacks the required scope. ([IETF Datatracker][1])
+
+```http
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="api", error="invalid_token",
+                  error_description="The access token expired"
+```
+
+Clients should treat `401 invalid_token` as "refresh or re-authenticate, then retry once" and `403 insufficient_scope` as "do not retry with the same token."
+
+## Server-side validation
 
 ```text
 TLS is valid
@@ -75,7 +87,9 @@ Request body matches schema
 Idempotency key prevents duplicate state-changing requests
 ```
 
-For an **API key** rather than an OAuth access token, I would still prefer an authorization-style header:
+## API keys vs. bearer tokens
+
+For an **API key** rather than an OAuth access token, still prefer an authorization-style header:
 
 ```http
 Authorization: ApiKey <api-key-value>
@@ -87,15 +101,17 @@ or, if your platform standardizes it:
 X-API-Key: <api-key-value>
 ```
 
-But for OAuth/JWT access tokens, use:
+Note that `ApiKey` is not an IANA-registered HTTP authentication scheme (unlike `Bearer`, `Basic`, or `DPoP`) — it works, and it keeps credentials out of URLs, but treat it as a platform convention and document it as such. For OAuth/JWT access tokens, use the standard form:
 
 ```http
 Authorization: Bearer <access-token>
 ```
 
-And never log the raw token. Log only safe metadata such as `jti`, issuer, subject hash, client ID, certificate thumbprint, request ID, decision, and failure reason.
+(If you adopt DPoP sender-constrained tokens, the scheme changes to `Authorization: DPoP <token>` plus a `DPoP` proof header — see [Token Security](token-security-guide.md).)
 
-[1]: https://datatracker.ietf.org/doc/html/rfc6750 "The OAuth 2.0 Authorization Framework: Bearer Token ..."
+Never log the raw token. Log only safe metadata such as `jti`, issuer, subject hash, client ID, certificate thumbprint, request ID, decision, and failure reason.
+
+[1]: https://datatracker.ietf.org/doc/html/rfc6750 "RFC 6750 - The OAuth 2.0 Authorization Framework: Bearer Token Usage"
 [2]: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html "REST Security Cheat Sheet"
 
 ---
@@ -103,6 +119,7 @@ And never log the raw token. Log only safe metadata such as `jti`, issuer, subje
 ## Related
 
 - [API Security Headers & Controls](api-security-headers-and-controls.md)
+- [Implementing mTLS at the Gateway](mtls-at-the-gateway.md)
 - [Idempotency-Key & X-Request-ID Headers](idempotency-key-and-request-id.md)
 - [Token Security (validation checklist)](token-security-guide.md)
 - [API Keys](api-keys.md)
