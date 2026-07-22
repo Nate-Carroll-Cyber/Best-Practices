@@ -1,6 +1,6 @@
 # Token Security: Types, Usage & Failure Modes
 
-Yes — tokens deserve their own section. I’d break them into **token types**, **where they are used**, and **how they fail**.
+Tokens deserve their own section. Break them into **token types**, **where they are used**, and **how they fail**.
 
 ## Token types to distinguish
 
@@ -19,20 +19,20 @@ Yes — tokens deserve their own section. I’d break them into **token types**,
 **1. Do not mix token types.**
 An **ID token** is for the client to authenticate the user. An **access token** is for the API. A **refresh token** is for the authorization server. Accepting the wrong token in the wrong place is a classic token-confusion problem. OIDC requires clients to validate ID token claims such as nonce when present, while APIs should validate access-token audience, scope, issuer, and expiry. ([OpenID Foundation][1])
 
-**2. Validate JWTs completely.**
-For JWT access or ID tokens, validate signature, allowed algorithm, issuer, audience, expiration, not-before time, token type, key ID, and required claims. RFC 8725 specifically warns against algorithm confusion and requires callers to control the accepted algorithms rather than trusting the token header. ([RFC Editor][2])
+**2. Validate access tokens completely.**
+For JWT access or ID tokens, validate signature, allowed algorithm, issuer, audience, expiration, not-before time, token type, key ID, and required claims. RFC 8725 specifically warns against algorithm confusion and requires callers to control the accepted algorithms rather than trusting the token header. ([RFC Editor][2]) Not every access token is a JWT — for opaque tokens, validate via Token Introspection (RFC 7662) at the authorization server and apply the same issuer/audience/scope/expiry checks to the introspection response. ([RFC Editor][7])
 
 **3. Prefer short-lived access tokens.**
-Access tokens should usually be short-lived because bearer tokens are usable by whoever possesses them. OWASP’s REST guidance notes that HTTPS protects credentials such as API keys and JWTs in transit, but short lifetimes reduce impact if tokens are still leaked through logs, browser storage, proxies, or compromised clients. ([OWASP Cheat Sheet Series][3])
+Access tokens should usually be short-lived because bearer tokens are usable by whoever possesses them. OWASP's REST guidance notes that HTTPS protects credentials such as API keys and JWTs in transit, but short lifetimes reduce impact if tokens are still leaked through logs, browser storage, proxies, or compromised clients. ([OWASP Cheat Sheet Series][3])
 
 **4. Rotate refresh tokens.**
-Refresh tokens are high-value because they mint new access tokens. OAuth 2.0 Security Best Current Practice says refresh tokens for public clients must be sender-constrained or use refresh-token rotation. ([IETF Datatracker][4])
+Refresh tokens are high-value because they mint new access tokens. OAuth 2.0 Security Best Current Practice (RFC 9700) says refresh tokens for public clients must be sender-constrained or use refresh-token rotation — and rotation gives you reuse detection: a replayed old refresh token signals theft and should revoke the whole token family. ([IETF Datatracker][4])
 
 **5. Use sender-constrained tokens for high-risk APIs.**
-Bearer tokens are “bearer” because possession is enough. For machine-to-machine, partner, financial, healthcare, admin, or sensitive APIs, consider mTLS-bound tokens or DPoP. RFC 8705 defines OAuth mutual-TLS client authentication and certificate-bound access/refresh tokens, and RFC 9449 defines DPoP to sender-constrain OAuth tokens at the application layer. ([RFC Editor][5])
+Bearer tokens are "bearer" because possession is enough. For machine-to-machine, partner, financial, healthcare, admin, or sensitive APIs, consider mTLS-bound tokens or DPoP. RFC 8705 defines OAuth mutual-TLS client authentication and certificate-bound access/refresh tokens, and RFC 9449 defines DPoP to sender-constrain OAuth tokens at the application layer. ([RFC Editor][5], [RFC Editor][8])
 
 **6. Store browser tokens carefully.**
-For browser apps, avoid long-lived tokens in `localStorage`. Prefer secure, HttpOnly, SameSite cookies for web sessions or refresh tokens, with CSRF controls when cookies are used. If using bearer access tokens in the browser, keep them short-lived and minimize exposure.
+For browser apps, avoid long-lived tokens in `localStorage`. Prefer secure, HttpOnly, SameSite cookies for web sessions or refresh tokens, with CSRF controls when cookies are used. If using bearer access tokens in the browser, keep them short-lived and minimize exposure — or keep tokens out of the browser entirely with a backend-for-frontend (BFF) that holds them server-side behind a session cookie.
 
 **7. Do not put sensitive data in tokens.**
 A signed JWT is not encrypted. Anyone with the token can decode the claims. Store only what the recipient needs: subject, issuer, audience, expiration, scopes, tenant, roles, authorization context, and token ID. Avoid secrets, API keys, credentials, sensitive PII, or internal-only data.
@@ -104,7 +104,7 @@ Logging:
 Never log tokens; log token IDs, issuer, subject hash, client ID, and decision outcome instead
 ```
 
-The simplest way to say it in your checklist:
+In one sentence:
 
 > Use short-lived, audience-bound, scope-limited tokens; separate access, ID, refresh, session, CSRF, and reset-token use cases; validate JWTs fully; rotate refresh tokens; protect browser storage; never log or place tokens in URLs; use revocation for high-risk events; and apply sender-constrained tokens such as mTLS or DPoP for sensitive APIs.
 
@@ -112,8 +112,10 @@ The simplest way to say it in your checklist:
 [2]: https://www.rfc-editor.org/info/rfc8725/ "RFC 8725: JSON Web Token Best Current Practices"
 [3]: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html "REST Security Cheat Sheet"
 [4]: https://datatracker.ietf.org/doc/rfc9700/ "RFC 9700 - Best Current Practice for OAuth 2.0 Security"
-[5]: https://www.rfc-editor.org/info/rfc8705/ "RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication ..."
-[6]: https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html "JSON Web Token for Java"
+[5]: https://www.rfc-editor.org/info/rfc8705/ "RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access Tokens"
+[6]: https://cheatsheetseries.owasp.org/cheatsheets/JSON_Web_Token_for_Java_Cheat_Sheet.html "JSON Web Token for Java - OWASP Cheat Sheet Series"
+[7]: https://www.rfc-editor.org/info/rfc7662/ "RFC 7662: OAuth 2.0 Token Introspection"
+[8]: https://www.rfc-editor.org/info/rfc9449/ "RFC 9449: OAuth 2.0 Demonstrating Proof of Possession (DPoP)"
 
 ---
 
@@ -121,6 +123,8 @@ The simplest way to say it in your checklist:
 
 - [JWT Security Best Practices](jwt-security-best-practices.md)
 - [OAuth 2.0 Security Best Practices](oauth-security-best-practices.md)
+- [OpenID Connect (OIDC) Security Best Practices](oidc-security-best-practices.md)
 - [API Keys](api-keys.md)
 
 See [References](references.md) for the full citation registry.
+
