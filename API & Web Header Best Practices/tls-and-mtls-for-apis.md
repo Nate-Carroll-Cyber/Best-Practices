@@ -1,10 +1,10 @@
 # TLS & mTLS for APIs
 
-Yes — for an API, **TLS is mandatory**, and **mTLS is recommended for higher-trust or machine-to-machine paths**.
+For an API, **TLS is mandatory**, and **mTLS is recommended for higher-trust or machine-to-machine paths**.
 
 ## TLS baseline
 
-Use TLS everywhere: browser to frontend, frontend to API, API to API, API to database, and service to service. OWASP’s REST guidance recommends HTTPS/TLS for REST services, and NIST SP 800-52 provides TLS configuration guidance for protecting data in transit. ([OWASP Cheat Sheet Series][1])
+Use TLS everywhere: browser to frontend, frontend to API, API to API, API to database, and service to service. OWASP's REST guidance recommends HTTPS/TLS for REST services, and NIST SP 800-52 Rev. 2 provides TLS configuration guidance for protecting data in transit. ([OWASP Cheat Sheet Series][1], [NIST][3])
 
 Recommended baseline:
 
@@ -12,7 +12,7 @@ Recommended baseline:
 TLS versions:
 - Prefer TLS 1.3
 - Allow TLS 1.2 only if needed
-- Disable SSL, TLS 1.0, and TLS 1.1
+- Disable SSL, TLS 1.0, and TLS 1.1 (formally deprecated by RFC 8996)
 
 Certificates:
 - Use publicly trusted certs for public services
@@ -111,7 +111,7 @@ Centralized certificate lifecycle management
 | Mistake                                    | Why it matters                                                                       |
 | ------------------------------------------ | ------------------------------------------------------------------------------------ |
 | Using TLS only at the public load balancer | Internal traffic may still be plaintext                                              |
-| Accepting any valid client certificate     | mTLS must validate identity, not just “has a cert”                                   |
+| Accepting any valid client certificate     | mTLS must validate identity, not just "has a cert"                                   |
 | Long-lived client certs                    | Harder to revoke and rotate safely                                                   |
 | No certificate inventory                   | Expiration becomes an outage risk                                                    |
 | No revocation/rotation plan                | Compromised certs stay useful                                                        |
@@ -152,13 +152,14 @@ Certificate-bound tokens for high-risk clients
 ```
 
 [1]: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html "REST Security Cheat Sheet"
-[2]: https://www.rfc-editor.org/info/rfc8705/ "RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication ..."
+[2]: https://www.rfc-editor.org/info/rfc8705/ "RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access Tokens"
+[3]: https://csrc.nist.gov/pubs/sp/800/52/r2/final "NIST SP 800-52 Rev. 2: Guidelines for the Selection, Configuration, and Use of TLS Implementations"
 
 ---
 
 ## Related
 
-- [Implementing mTLS at the Gateway](implementing-mtls-at-the-gateway.md)
+- [Implementing mTLS at the Gateway](mtls-at-the-gateway.md)
 - [Token Security (certificate-bound tokens, RFC 8705)](token-security-guide.md)
 
 See [References](references.md) for the full citation registry.
