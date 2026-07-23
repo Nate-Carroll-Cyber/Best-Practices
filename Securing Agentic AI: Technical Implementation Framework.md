@@ -1,7 +1,8 @@
 # Securing Agentic AI: Technical Implementation Framework
 
-**Version:** Consolidated 2.0
+**Version:** Consolidated 2.1
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
+**Changes from 2.0:** self-verifying-signature anti-pattern and key-custody closure properties (§4.1); assertion-backed principal attribution (§9.1); compromise-window ceiling on single-stream integrity (§9.1); new compromise-resistance model, threat-closure table, and retrofit remediation order (§9.5); Priority 1 addition (§16); glossary addition (§17).
 
 ## Executive Summary
 
@@ -213,7 +214,9 @@ Block the cloud metadata endpoint (`169.254.169.254`, `metadata.google.internal`
 - If decentralized identifiers (DIDs) are used, select or define a DID method with documented issuance, resolution, rotation, recovery, and revocation.
 - Automate certificate and key rotation, revocation, and compromise response.
 
-**Prohibited anti-patterns:** shared service accounts across agents; generic identities (`agent-1`, `automation-bot`); long-lived static API keys or bearer tokens as primary agent credentials; capability lists embedded in certificate SANs.
+**Prohibited anti-patterns:** shared service accounts across agents; generic identities (`agent-1`, `automation-bot`); long-lived static API keys or bearer tokens as primary agent credentials; capability lists embedded in certificate SANs; **symmetric-key (HMAC) signing of audit or attestation records, where any authorized verifier can also forge; and self-verifying identity, where issuance, signing, and verification reside in the same process or trust domain.** With symmetric schemes, verification capability equals forgery capability, so no non-repudiation exists. Use asymmetric signing with verifiers that hold only public material and validate a trust chain to an independent authority.
+
+> **Key custody closes exfiltration, not live misuse.** Holding agent signing keys in a KMS/HSM — the workload calls a signing API and never handles raw key bytes — prevents key theft and establishes a hard revocation boundary: records signed after credential revocation are impossible. It does **not** prevent a live, compromised workload from producing validly signed but false records through its legitimate signing access, because the signer is the compromised party. Treat KMS/HSM custody as a revocability control and pair it with the corroboration requirements in §9.5.
 
 Identity establishes the calling workload. It does not grant permission by itself.
 
@@ -301,6 +304,8 @@ All consequential tool calls pass through a deterministic enforcement broker (po
 - Records the decision and outcome
 
 **Tool output must never automatically trigger another tool.** Each subsequent action requires a new proposal and a new policy decision. Enforce per-call timeouts and output-size limits, and do not auto-retry failed privileged calls.
+
+The broker's decision records constitute an independently authored event stream when the broker runs outside the agent runtime; §9.5 relies on this stream for cross-stream corroboration.
 
 ### 5.3 Circuit Breakers and Emergency Stops
 
@@ -424,11 +429,13 @@ Critical actions may require multiple independent approvers and phishing-resista
 
 ### 9.1 Audit Records
 
-Security-relevant events must record: authenticated agent and initiating principal; tenant, session, task, and trace identifiers; requested action and target; policy decision and policy version; human-approval evidence; tool identity, version, and execution boundary; input/output references, classifications, or approved hashes; outcome, timing, and error category; and sequence/integrity metadata.
+Security-relevant events must record: authenticated agent and initiating principal; tenant, session, task, and trace identifiers; requested action and target; policy decision and policy version; human-approval evidence; tool identity, version, and execution boundary; input/output references, classifications, or approved hashes; outcome, timing, and error category; and sequence/integrity metadata. Include the signing key identifier (`key_id`) in every record so that records remain attributable across key rotations.
+
+> **The initiating principal must be an authenticated claim, not a self-asserted string.** Derive the principal recorded in audit events from a validated identity assertion — an OIDC ID token verified against the identity provider's published keys (issuer, audience, expiry) or an mTLS-bound session assertion — and record the issuer, subject, assertion hash, and binding type. A session whose principal is not assertion-backed must be labeled as self-asserted; its records identify a session, not an accountable human. Retain the assertion hash so records can be correlated against identity-provider logs that the agent runtime cannot author. Note that a binding-type field written by the agent runtime is itself forgeable under compromise; its assurance value depends on that external correlation (§9.5).
 
 Use canonical serialization, immutable verification copies, and independently controlled append-only or WORM storage, with externally anchored checkpoints.
 
-> **Hash chaining alone does not prevent deletion, rollback, truncation, or wholesale replacement of a local chain.** It makes tampering *evident* only when combined with independent, access-controlled storage (e.g., S3 Object Lock, GCS retention/Bucket Lock) and external anchoring. The agent must have no access to log storage or modification infrastructure.
+> **Hash chaining alone does not prevent deletion, rollback, truncation, or wholesale replacement of a local chain.** It makes tampering *evident* only when combined with independent, access-controlled storage (e.g., S3 Object Lock, GCS retention/Bucket Lock) and external anchoring. The agent must have no access to log storage or modification infrastructure. Even then, records authored during a live compromise are cryptographically valid: single-stream integrity has a ceiling of tamper-evidence for pre-compromise history. Reconstructing events within a compromise window requires cross-stream corroboration (§9.5).
 
 ### 9.2 Traceable Decisions
 
@@ -438,13 +445,37 @@ Do **not** require or retain raw private chain-of-thought tokens as a compliance
 
 ### 9.3 Behavioral Monitoring
 
-Monitor for: new tools, destinations, or data types; rate, volume, cost, or latency anomalies; repeated denied requests; delegation depth or fan-out anomalies; read-then-exfiltrate action sequences (compositional risk); credential or policy failures; missing expected telemetry (evasion signature); cross-tenant access indicators; and model, prompt, tool, or dependency changes.
+Monitor for: new tools, destinations, or data types; rate, volume, cost, or latency anomalies; repeated denied requests; delegation depth or fan-out anomalies; read-then-exfiltrate action sequences (compositional risk); credential or policy failures; missing expected telemetry (evasion signature); cross-tenant access indicators; divergence between independently authored record streams (§9.5); and model, prompt, tool, or dependency changes.
 
 Statistical and model-based detectors (baselines, z-scores, distribution-shift tests, goal-alignment scoring) produce **signals**; they do not replace policy enforcement. Calibrate thresholds against representative benign and malicious sessions, and track false-positive rate and correct-escalation rate as first-class metrics.
 
 ### 9.4 Incident Response
 
 Procedures must support containment, credential revocation, evidence preservation, tenant notification, rollback, dependency quarantine, regulatory assessment, root-cause analysis, and controlled restoration. Rebuild compromised workloads from known-good images and rotate potentially exposed credentials from a clean environment. Exercise the plan before production and after material architectural changes.
+
+During forensic reconstruction, treat the agent-authored record stream as one input among several; reconcile it against the independently authored streams in §9.5 before drawing conclusions about events inside the compromise window.
+
+### 9.5 Compromise-Resistance Model and Remediation Order
+
+Each identity and audit-integrity control closes a narrower failure mode than "safe under compromise." Scope every control's claim precisely, and order retrofit remediation by what each control actually buys:
+
+| Control | Closes | Does not close |
+|---|---|---|
+| Independent WORM/append-only storage with external anchoring | Retroactive deletion, truncation, or rewriting of pre-compromise history | False records authored during a live compromise |
+| KMS/HSM key custody (workload never holds raw key bytes) | Key exfiltration; forgery after credential revocation | Live signing of false records via the workload's legitimate signing access |
+| Assertion-backed principal binding (§9.1) | Fabricated human attribution at session start | Compromised-runtime reuse of an already-valid session |
+| External identity authority (SPIFFE/SPIRE, PKI) | Identity minting; cross-agent impersonation; post-revocation identity reuse | Abuse of an identity that is already valid |
+| Out-of-process PDP/PEP with its own record stream (§5.2) | Single-stream falsification; policy bypass or patching within the agent runtime | — (this control supplies the corroboration baseline) |
+
+**The live-compromise residual.** Because the signer is the compromised party, no key ceremony prevents a live compromised runtime from emitting internally consistent, validly signed false records. The ceiling of any single record stream is tamper-evidence for history. Answering "what happened during the compromise window" — as opposed to "what one stream claims happened" — requires at least two independently authored streams that the agent runtime cannot write: the enforcement broker's decision records, KMS/cloud-provider signing and access logs (e.g., CloudTrail), tool- and destination-side logs, and network telemetry. Reconcile these against the agent's stream; divergence or absence between streams is itself a detection signal (§9.3).
+
+**Recommended remediation order for retrofits**, ranked by forensic value:
+
+1. Independent append-only storage with external anchoring — the only control in the set that preserves history.
+2. KMS/HSM key custody — revocability and a hard post-revocation forgery boundary.
+3. Assertion-backed principal binding — accountable human attribution.
+4. External identity authority — anti-minting and impersonation resistance.
+5. Out-of-process enforcement with an independently authored stream — cross-stream corroboration; last in sequence, not least in value.
 
 ---
 
@@ -466,7 +497,7 @@ Threat modeling must cover model behavior, orchestration, memory, tools, data, i
 
 A structured, layered approach such as CSA's **MAESTRO** framework can organize this analysis. MAESTRO defines a **seven-layer** reference architecture — foundation models; data operations; agent frameworks; deployment and infrastructure; evaluation and observability; security and compliance (vertical); and the agent ecosystem — and maps threats and mitigations across those layers. Use the framework's actual layer structure; do not substitute an invented layer count.
 
-Validation must include: direct and indirect prompt injection; goal hijacking and policy conflict; tool substitution and manifest changes; confused-deputy and token misuse; cross-session and cross-tenant leakage; memory poisoning and provenance failures; privilege amplification through safe-looking action sequences; approval tampering and stale approvals; sandbox escape and resource exhaustion; data exfiltration and covert destinations; logging interruption and evidence manipulation; and recovery/emergency-stop operation.
+Validation must include: direct and indirect prompt injection; goal hijacking and policy conflict; tool substitution and manifest changes; confused-deputy and token misuse; cross-session and cross-tenant leakage; memory poisoning and provenance failures; privilege amplification through safe-looking action sequences; approval tampering and stale approvals; sandbox escape and resource exhaustion; data exfiltration and covert destinations; logging interruption and evidence manipulation; forgery and false-record authorship during simulated runtime compromise (validating the §9.5 corroboration path); and recovery/emergency-stop operation.
 
 Measure detection rate, false-positive rate, unsafe-action completion rate, correct-escalation rate, containment time, and recovery time. **Test complete sessions and realistic action sequences, not only isolated prompts.** Red teaming should be conducted by an independent team whose test design the agent cannot influence.
 
@@ -510,6 +541,8 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Prompt injection | Untrusted-content isolation | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Privilege escalation | Tool authorization | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Accountability | Append-only audit storage | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Accountability | Assertion-backed principal attribution | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Compromise resistance | Cross-stream corroboration | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 
 Allowed statuses: `Not assessed`, `Planned`, `Partial`, `Implemented`, `Verified`, `Exception approved`. If coverage percentages are used, document the scoring method, evidence standard, treatment of partial controls, and independent-validation process.
 
@@ -544,6 +577,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Structured tool schemas and safe database access
 - Bound human approval for high-impact actions (with TOCTOU-safe re-check)
 - Append-only/WORM audit storage and tested incident response
+- Assertion-backed principal attribution in audit records (§9.1)
 - Emergency stops and credential revocation
 - Threat modeling and a passed production security gate
 
@@ -552,6 +586,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Central authenticated service and tool registry
 - Automated artifact and dependency verification
 - Cross-step behavioral monitoring
+- Cross-stream corroboration coverage for compromise-window reconstruction (§9.5)
 - Memory provenance and lifecycle controls
 - Multi-agent delegation governance
 - Complete control evidence and recertification
@@ -570,6 +605,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 
 - **Agent:** An AI-enabled system that can plan or select actions and invoke tools.
 - **AIBOM:** Inventory of models, data, prompts, tools, and supporting software used by an AI system.
+- **Cross-stream corroboration:** Reconciling the agent-authored audit stream against independently authored record streams (broker decisions, KMS/CSP logs, tool-side logs, network telemetry) that the agent runtime cannot write; the required control for reconstructing events during a live compromise.
 - **DID:** Decentralized Identifier (W3C); requires a method defining issuance, resolution, rotation, and revocation.
 - **DPoP:** Demonstrating Proof of Possession; binds token use to a key.
 - **HITL:** Human-in-the-loop review or approval for defined actions.
@@ -580,6 +616,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Policy decision point (PDP):** Evaluates an action against authorization policy.
 - **Policy enforcement point (PEP):** Permits, denies, or constrains execution based on a policy decision.
 - **Proof of possession:** Cryptographic evidence that a caller holds the key to which a credential is bound.
+- **Self-verifying identity (anti-pattern):** An identity or audit scheme in which issuance, signing, and verification reside in the same process or trust domain, or a symmetric scheme in which verifiers can forge; provides cryptographic structure without a trust boundary.
 - **SPIFFE/SPIRE:** Standard and runtime for securely identifying software workloads.
 - **TOCTOU:** Time-of-check/time-of-use; the gap between approval and execution that must be closed by re-authorization.
 - **WORM:** Write once, read many storage used to resist alteration or deletion.
@@ -598,6 +635,7 @@ Maintain dated references to the authoritative versions the organization actuall
 - W3C DID specifications (when DIDs are used)
 - SPIFFE/SPIRE documentation (when workload identity is used)
 - OAuth 2.0, token exchange (RFC 8693), mTLS token binding, and DPoP specifications
+- OpenID Connect Core (ID token validation, for principal assertion binding)
 - CSA MAESTRO and MITRE ATLAS threat-modeling sources
 - Current MCP protocol and authorization specifications
 - CIS Kubernetes Benchmark (for container/orchestration hardening)
@@ -606,4 +644,4 @@ Maintain dated references to the authoritative versions the organization actuall
 
 ## Conclusion
 
-Secure agentic AI requires independently enforced controls **around** the model. Cryptographic workload identity, short-lived proof-of-possession authority, isolated execution, provenance-aware context, brokered and schema-constrained tools, cryptographically bound approvals, tamper-resistant and independently stored evidence, and tested containment together form the production security boundary. Model instructions, delimiters, and classifiers add valuable defense in depth, but they do not replace deterministic authorization or operational accountability. Treat every code snippet here as a sketch to validate, every framework mapping as a planning aid to verify, and autonomy as something earned through evidence rather than asserted.
+Secure agentic AI requires independently enforced controls **around** the model. Cryptographic workload identity, short-lived proof-of-possession authority, isolated execution, provenance-aware context, brokered and schema-constrained tools, cryptographically bound approvals, tamper-resistant and independently stored evidence, and tested containment together form the production security boundary. Model instructions, delimiters, and classifiers add valuable defense in depth, but they do not replace deterministic authorization or operational accountability. Scope every integrity control to the failure mode it actually closes, and assume that reconstructing a compromise requires corroboration across streams the agent cannot author. Treat every code snippet here as a sketch to validate, every framework mapping as a planning aid to verify, and autonomy as something earned through evidence rather than asserted.
