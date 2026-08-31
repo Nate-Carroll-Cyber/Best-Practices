@@ -1,11 +1,12 @@
 # Securing Agentic AI: Technical Implementation Framework
 
-**Version:** Consolidated 2.3
+**Version:** Consolidated 2.4
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
-**Changes from 2.2:** sixth governing principle on capability combinations; trifecta added to system classification (§2.1); server-side authorization decisions, OAuth 2.1, and resource-indicator token binding (§4.3); server registration and shadow discovery (§4.6); per-server kill switch (§5.3); OAuth client/authorization-server role separation (§6.3); infrastructure-enforced tenant isolation and ingestion-time classification (§7.4); **intent integrity and the capability trifecta (§7.8)**; log-store minimization and retention (§9.1); SIEM/XDR integration and three new monitoring signals (§9.3); compromise-scenario drills (§9.4); tenant-isolation and telemetry tests plus verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
+**Changes from 2.3:** research and evaluation workloads added to system classification (§2.1); independent dual-layer egress, boundary self-modification prohibition, transitive-path closure, and cached fetch service (§3.3); public-platform token sweep (§4.5); class-scoped evaluation shutdown (§5.3); reasoning traces as security evidence (§9.2); platform and host telemetry baseline plus four new monitoring signals (§9.3); eradication scope, retrospective run review, and cross-run collective response (§9.4); internal mirrors and cache integrity (§10); control-environment attack in threat model, three new regression tests, and two new verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
+**Changes from 2.2 (delivered in 2.3):** sixth governing principle on capability combinations; trifecta added to system classification (§2.1); server-side authorization decisions, OAuth 2.1, and resource-indicator token binding (§4.3); server registration and shadow discovery (§4.6); per-server kill switch (§5.3); OAuth client/authorization-server role separation (§6.3); infrastructure-enforced tenant isolation and ingestion-time classification (§7.4); intent integrity and the capability trifecta (§7.8); log-store minimization and retention (§9.1); SIEM/XDR integration and three new monitoring signals (§9.3); compromise-scenario drills (§9.4); tenant-isolation and telemetry tests plus verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
 **Changes from 2.1 (delivered in 2.2):** secret custody and model-context exclusion, and untrusted project configuration (§4.5); local-transport binding and origin validation (§6.2); full-schema metadata scanning, display-control stripping, and TOFU pinning (§6.4); error design (§6.5); service surface hardening baseline (§6.7); safe command and process execution (§7.6); model invocation guardrails (§7.7).
 
-**Numbering note:** All 2.2 and 2.3 additions append at the tail of an existing section. Section numbers 1–18 and every cross-reference established in 2.1 are unchanged.
+**Numbering note:** All 2.2, 2.3, and 2.4 additions append at the tail of an existing section. Section numbers 1–18 and every cross-reference established in 2.1 are unchanged.
 
 ## Executive Summary
 
@@ -71,6 +72,7 @@ Before development and again before deployment, classify the system using:
 - External connectivity and tool privileges
 - Multi-agent and third-party dependencies
 - Whether the system simultaneously holds all three legs of the capability trifecta in §7.8 — private-data access, untrusted-content ingestion, and external communication
+- Whether the system executes model-generated code, runs training or evaluation workloads, or hosts research models. These workloads are high-risk by default regardless of data sensitivity, because the model under test is itself an untrusted party with execution access.
 - Applicable jurisdictions and sector-specific obligations
 
 Do not treat a simplified risk-tier label as a complete legal classification. Regulatory applicability depends on the system, use case, jurisdiction, and the organization's legal role.
@@ -207,6 +209,13 @@ Block the cloud metadata endpoint (`169.254.169.254`, `metadata.google.internal`
 
 Egress restriction is also a credential-protection control: a leaked token with no reachable destination has materially reduced exploit value (§4.5). Monitor and alert on outbound connections to unapproved domains from agent and plugin workloads.
 
+Default-deny egress is necessary but not sufficient on its own. Four properties determine whether it holds under a capable adversary:
+
+- **Two independent layers.** Enforce egress at the sandbox or workload layer and again at the cluster or infrastructure layer. Neither layer reads the other's configuration, and a compromise of one does not relax the other. A single enforcement point, however well configured, is a single thing to defeat.
+- **The workload cannot modify its own boundary.** Creation of load balancers, private links, peering, tunnels, VPN enrollments, DNS records, and any other outbound path is a privileged control-plane action gated by the same change-management path as policy, with its own attributable record. Cloud IAM for these operations is denied to workload identities outright, not merely unrequested.
+- **Transitive paths are closed.** Shared services, caches, internal APIs, private links to other environments, and any component the workload can reach are audited for their own egress. A service that can reach the internet on the workload's behalf inherits the workload's restrictions. Enumerate these paths deliberately; they are where exfiltration actually goes once the direct route is closed.
+- **High-risk workloads get no internet, direct or transitive.** Where a workflow genuinely needs live external content, serve it through a cached fetch service that applies the same allowlist, logging, and DLP controls, granted per workflow on review rather than per workload by default.
+
 ---
 
 ## 4. Identity and Authorization
@@ -282,7 +291,7 @@ Discovery metadata must come from an authenticated registry and include service 
 
 **Untrusted project configuration.** Repository and workspace configuration — agent settings files, MCP server definitions, tool manifests committed to a project, auto-approval directives, and IDE or runtime config — is *active input*, not inert data. It can redirect authenticated traffic, register additional servers, or pre-approve tools. Do not load project-supplied agent configuration before an explicit trust decision by the accountable owner, and treat configuration changes with the same review requirement as code.
 
-**Retrospective sweep for existing systems.** On onboarding a system that predates these controls, scan repository history, configuration, and at minimum the full log-retention window for token-like strings. Rotate everything found. Absence of evidence of exposure is not evidence of non-exposure; where log retention is shorter than the credential's lifetime, rotate by default.
+**Retrospective sweep for existing systems.** On onboarding a system that predates these controls, scan repository history, configuration, and at minimum the full log-retention window for token-like strings. Rotate everything found. Absence of evidence of exposure is not evidence of non-exposure; where log retention is shorter than the credential's lifetime, rotate by default. Extend the sweep beyond the organization's own repositories to public platforms where personnel or systems may have published tokens: public code hosts, model hubs, package registries, and paste services. A token exposed publicly is compromised at the moment of exposure; revoke it rather than assess it. Where an agent has used a credential that this system did not issue, treat the credential as exposed and the issuing system as in scope for notification (§9.4).
 
 ### 4.6 Server Registration and Shadow Discovery
 
@@ -367,6 +376,8 @@ Example trigger conditions: error-rate spikes, probable infinite loops (excessiv
 Automatic recovery (a half-open retry) may be used for low-risk, idempotent operations. Breakers involving privileged, destructive, financial, safety-critical, or externally visible actions **remain latched** until an authorized operator reviews and resets them. Recovery tests must use non-destructive synthetic actions.
 
 Containment must extend to infrastructure, not only to sessions. An authorized operator must be able to disable a specific tool server, revoke its credentials, and cut its network reachability within minutes, without waiting on a deployment cycle (§4.6).
+
+Containment must also be **class-scoped**. An operator must be able to halt every running workload matching a workload type, agent type, model family, or evaluation task in one operation, without enumerating sessions and without waiting on a deployment cycle. Per-session and per-server stops are insufficient when the concern is a class of runs rather than an instance; enumerating instances under pressure is how a stop becomes partial.
 
 ---
 
@@ -707,6 +718,8 @@ Record concise, purpose-generated decision evidence: objective and relevant sour
 
 Do **not** require or retain raw private chain-of-thought tokens as a compliance artifact; generate structured decision summaries instead. Apply minimization, redaction, encryption, access control, and retention limits to decision records.
 
+The prohibition above governs compliance artifacts. Reasoning traces retained as **security evidence** are a distinct case. Where the platform exposes chain-of-thought or equivalent, retain it for high-risk workloads under the same access control, minimization, encryption, and retention limits as the audit stream, bound to session and agent identity. Its purpose is forensic reconstruction and retrospective review (§9.4), not compliance demonstration. It is never fed back to an evaluator or guardrail as context (§7.8), and never surfaced to a human approver as a substitute for the structured decision summary.
+
 ### 9.3 Behavioral Monitoring
 
 Monitor for: new tools, destinations, or data types; rate, volume, cost, or latency anomalies; repeated denied requests; delegation depth or fan-out anomalies; read-then-exfiltrate action sequences (compositional risk); credential or policy failures; missing expected telemetry (evasion signature); cross-tenant access indicators; divergence between independently authored record streams (§9.5); and model, prompt, tool, or dependency changes.
@@ -721,6 +734,15 @@ Error-shape and tool-definition signals:
 - Agent connections to endpoints absent from the approved registry (§4.6).
 - Divergence between an agent's stated objective and its action sequence, evaluated outside the agent's own context (§7.8).
 
+Platform and host signals:
+
+- Attempted or successful creation of an outbound path by a workload identity, including load balancers, private links, tunnels, VPN enrollments, and DNS changes (§3.3). Attempts are signals in their own right; success is an incident.
+- Use by an agent of a credential this system did not issue. An agent calling a third-party API with a token that has no issuance record is either using a leaked credential or has discovered one, and both are incidents.
+- Publication by an agent to a location another run can read: public repositories, model hubs, paste services, webhooks, shared buckets. Individually benign runs form a persistent collective through exactly this edge.
+- Divergence from a workload's known execution cadence, and host-level indicators of privilege escalation, sandbox-boundary probing, or process anomalies from sensors inside the execution environment.
+
+Establish a **common platform monitoring baseline** across every environment hosting agent workloads, covering IAM events, network-path changes, and control-plane activity, separate from the agent's own action records. Action records show what the agent did through sanctioned interfaces; platform telemetry shows what happened around them, including attacks on the enforcement points themselves (§9.5).
+
 Agent and tool telemetry must reach the SIEM or XDR the security team actually monitors. Telemetry that lives only in an application-specific dashboard is not integrated with detection and will not be consulted during an incident. Establish behavioral baselines for normal agent and tool activity before relying on anomaly alerting.
 
 Statistical and model-based detectors (baselines, z-scores, distribution-shift tests, goal-alignment scoring) produce **signals**; they do not replace policy enforcement. Calibrate thresholds against representative benign and malicious sessions, and track false-positive rate and correct-escalation rate as first-class metrics.
@@ -732,6 +754,12 @@ Procedures must support containment, credential revocation, evidence preservatio
 During forensic reconstruction, treat the agent-authored record stream as one input among several; reconcile it against the independently authored streams in §9.5 before drawing conclusions about events inside the compromise window.
 
 Exercise concrete compromise scenarios rather than reviewing the plan on paper: who is paged, which store holds the relevant logs, who is authorized to activate the kill switch, and how long disabling a specific tool server actually takes. Each of these is a question that cannot be answered quickly under pressure, so it must be answered beforehand.
+
+**Eradication scope.** Revoking credentials issued during the incident window is insufficient. Revoke every credential the compromised workload held, accessed, or discovered, regardless of issuance date or owning system; the credentials an agent finds are more dangerous than the ones it was given. Purge poisoned memory, knowledge stores, and artifact or image caches. Lock down model weights and internal-only model families the workload touched until provenance is re-established. Rotate or delete external channels the agent used to publish. Quarantine any training or fine-tuning data derived from the incident window until cleared; otherwise the incident persists in the next model.
+
+**Retrospective run review.** Root-cause analysis looks at the declared incident. This step looks backward across time. Review reasoning traces (§9.2), action records, and outputs from prior runs of the same model family, workload type, or shared infrastructure, bounded by the earliest credible compromise indicator rather than the declaration time. Findings extend the incident window and widen the eradication scope above.
+
+**Cross-run collectives.** Assume that a compromised run may have shared capabilities, credentials, or data with other runs through external channels (§9.3), and that those runs are now independent actors. Containment enumerates and halts the collective, not the run that tripped the alert. The class-scoped stop in §5.3 exists for this case.
 
 ### 9.5 Compromise-Resistance Model and Remediation Order
 
@@ -771,6 +799,9 @@ Operational requirements that follow from this:
 - Sandbox third-party plugins (§5.1) so that one compromised component does not compromise the environment.
 - Monitor and restrict plugin network access, particularly calls to unknown domains.
 - Include developer workstations in the inventory (§6.2).
+- Resolve every dependency, image, and model artifact through an **internal mirror**. Workloads must not reach public package registries, container registries, or model hubs directly; the mirror is the single validation and egress point for third-party artifacts, and a workload that can bypass it has bypassed the supply-chain control entirely.
+- **A mirror cache is an integrity asset.** Verify digest and signature on every entry served, regardless of how the entry was populated. A trusted reference that resolves to attacker-controlled content inside the cache is a supply-chain injection with the mirror's credibility attached, and a cache that trusts its own contents is the mechanism by which that happens.
+- Credentials for mirrors, caches, and registries are per-agent, short-lived, and scoped to the artifacts the workload's declared task requires (§4.1, §4.3). A shared mirror credential converts a single compromised workload into write access to every consumer's dependency tree.
 
 > Signatures establish origin and integrity, **not** safety; runtime isolation and authorization remain mandatory. When recording AIBOM entries, verify each component's real package ecosystem, version scheme, and identifiers rather than assuming them.
 
@@ -785,6 +816,8 @@ Threat modeling must cover model behavior, orchestration, memory, tools, data, i
 A structured, layered approach such as CSA's **MAESTRO** framework can organize this analysis. MAESTRO defines a **seven-layer** reference architecture — foundation models; data operations; agent frameworks; deployment and infrastructure; evaluation and observability; security and compliance (vertical); and the agent ecosystem — and maps threats and mitigations across those layers. Use the framework's actual layer structure; do not substitute an invented layer count.
 
 Validation must include: direct and indirect prompt injection; goal hijacking and policy conflict; tool substitution and manifest changes; confused-deputy and token misuse; cross-session and cross-tenant leakage; memory poisoning and provenance failures; privilege amplification through safe-looking action sequences; approval tampering and stale approvals; sandbox escape and resource exhaustion; data exfiltration and covert destinations; logging interruption and evidence manipulation; forgery and false-record authorship during simulated runtime compromise (validating the §9.5 corroboration path); and recovery/emergency-stop operation.
+
+Validation must also include **control-environment attack**: the assumption that a capable model can discover novel vulnerabilities, exploit them, escalate privileges, and target the enforcement broker, the network boundary, the registry, and the evidence substrate directly. A passed control check is not evidence the environment hosting the check is intact.
 
 **Error-path and surface regression tests.** These are the least-exercised paths in most deployments and belong in an automated suite gated in CI on every change, run against every network-reachable component including fallback and debug servers:
 
@@ -802,6 +835,9 @@ Validation must include: direct and indirect prompt injection; goal hijacking an
 - Tenant isolation holds: a test that writes as tenant A and asserts tenant B can retrieve none of it, run on every build and repeated under concurrency.
 - Telemetry cannot be disabled, truncated, or redirected without an alert or independent approval.
 - An intent-misaligned action proposed after untrusted-content injection is blocked by the alignment gate (§7.8).
+- Egress probe from inside a representative workload against each disallowed destination class, asserting a block at **both** isolation layers independently. A block at only one layer is a failure.
+- A workload-identity attempt to create an outbound path (load balancer, private link, tunnel, DNS record) is denied at the cloud control plane and generates the §9.3 signal.
+- A mutable artifact reference, an unsigned artifact, and a cache entry with a mismatched digest are each rejected at bind time.
 
 **Injection and traversal tests** against every tool that touches a process, a filesystem, or a query: shell metacharacters, argument-injection via leading `-`, encoded and symlinked path traversal, and untrusted values arriving through metadata and protocol fields rather than through the primary parameter.
 
@@ -813,6 +849,8 @@ Validation must include: direct and indirect prompt injection; goal hijacking an
 - Enumerate each agent's *effective* production permissions rather than its documented permissions, and compare the two (§4.2).
 - Trace every downstream call an agent makes and flag any that forwards the caller's token unchanged (§6.3).
 - Determine, for each production agent, whether its tool servers are vendor-built or drawn from an unreviewed repository (§10).
+- Enumerate every outbound path from agent workloads, including load balancers, private links, peering, VPN enrollments, and shared services with their own egress, and compare against the approved allowlist. Any path not on the list is a finding, and any path a workload identity could have created is a critical finding (§3.3).
+- Search public code hosts, model hubs, package registries, and paste services for tokens attributable to the organization (§4.5). Revoke every match.
 
 Measure detection rate, false-positive rate, unsafe-action completion rate, correct-escalation rate, containment time, and recovery time. **Test complete sessions and realistic action sequences, not only isolated prompts.** Red teaming should be conducted by an independent team whose test design the agent cannot influence.
 
@@ -867,6 +905,10 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Capability exposure | Current trifecta scorecard per agent | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Tenant isolation | Infrastructure-enforced namespaces, CI-tested | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Inventory | Mandatory registration and shadow discovery | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Network containment | Dual-layer egress with boundary self-modification denied | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Supply chain | Internal mirrors with cache integrity verification | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Platform visibility | IAM, network-path, and control-plane telemetry baseline | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Containment | Class-scoped evaluation shutdown | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 
 Allowed statuses: `Not assessed`, `Planned`, `Partial`, `Implemented`, `Verified`, `Exception approved`. If coverage percentages are used, document the scoring method, evidence standard, treatment of partial controls, and independent-validation process.
 
@@ -910,6 +952,9 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Mandatory server registration enforced as a deployment gate (§4.6)
 - Infrastructure-enforced tenant and session isolation, verified by test (§7.4, §11)
 - A current trifecta scorecard for every production agent, with at least one leg constrained wherever feasible (§7.8)
+- Independent dual-layer egress enforcement with workload-identity denial of outbound-path creation (§3.3)
+- Internal mirrors for every dependency, image, and model artifact, with no direct public-registry reach (§10)
+- Class-scoped evaluation shutdown for research and evaluation workloads (§5.3)
 - Threat modeling and a passed production security gate
 
 **Priority 2 — Required Before Scaling**
@@ -927,6 +972,10 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Intent anchoring and an independent alignment gate ahead of consequential actions (§7.8)
 - Continuous shadow-server discovery and unregistered-endpoint alerting (§4.6)
 - Telemetry integrated with the SIEM/XDR, with behavioral baselines established (§9.3)
+- Platform and host telemetry baseline feeding the SIEM alongside agent action records (§9.3)
+- Transitive-path enumeration and closure across shared services (§3.3)
+- Eradication runbook covering accessed credentials, caches, model weights, and external channels (§9.4)
+- Retrospective run review capability, including reasoning-trace retention for high-risk workloads (§9.2, §9.4)
 - Secure-by-default deployment templates that make the compliant path the fast path (§4.6)
 - Cumulative permission review and recertification (§4.2)
 - Complete control evidence and recertification
@@ -946,9 +995,13 @@ The following illustrates the intended mapping *shape* — each row supports, an
 
 - **Agent:** An AI-enabled system that can plan or select actions and invoke tools.
 - **AIBOM:** Inventory of models, data, prompts, tools, and supporting software used by an AI system.
+- **Cache poisoning (artifact):** Substitution of attacker-controlled content for a trusted reference inside a mirror or cache, so that consumers receive malicious content with the mirror's credibility attached (§10).
 - **Capability trifecta:** The combination of private-data access, untrusted-content ingestion, and external communication in one agent; exploitable as a combination even where each leg is individually well controlled (§7.8).
+- **Class-scoped stop:** Halting every workload matching a type, model family, or evaluation task in one operation, as distinct from per-session or per-server stops (§5.3).
 - **Confused deputy:** A component with legitimate authority induced to exercise it on behalf of a caller that lacks that authority; in agentic systems, most often via token passthrough (§6.3).
+- **Control-environment attack:** An adversary, including the model under evaluation, targeting the enforcement broker, network boundary, registry, or evidence substrate rather than the guardrails they host (§11).
 - **Correlation identifier:** A validated, generated-if-absent identifier propagated across services that joins the model-facing error, client response, operational log, and audit record for a single event.
+- **Cross-run collective:** Independent agent runs that share capabilities, credentials, or data through external channels and thereby persist beyond any single session (§9.3, §9.4).
 - **Cross-stream corroboration:** Reconciling the agent-authored audit stream against independently authored record streams (broker decisions, KMS/CSP logs, tool-side logs, network telemetry) that the agent runtime cannot write; the required control for reconstructing events during a live compromise.
 - **DID:** Decentralized Identifier (W3C); requires a method defining issuance, resolution, rotation, and revocation.
 - **DPoP:** Demonstrating Proof of Possession; binds token use to a key.
@@ -969,6 +1022,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **SPIFFE/SPIRE:** Standard and runtime for securely identifying software workloads.
 - **TOCTOU:** Time-of-check/time-of-use; the gap between approval and execution that must be closed by re-authorization.
 - **TOFU:** Trust on first use; pinning an artifact or schema at first observation and alerting on later change. A fallback where signature verification is unavailable, not an equivalent to it.
+- **Transitive egress:** Internet reachability obtained through a shared service, cache, private link, or other intermediary rather than directly from the workload; closed by applying the workload's restrictions to every reachable intermediary (§3.3).
 - **WORM:** Write once, read many storage used to resist alteration or deletion.
 
 ---
@@ -991,6 +1045,7 @@ Maintain dated references to the authoritative versions the organization actuall
 - Current MCP protocol and authorization specifications
 - CIS Kubernetes Benchmark (for container/orchestration hardening)
 - Provider model-service documentation for model identifiers, regions, and retention terms
+- Post-incident technical reports on agentic and research-workload compromises (record publisher, date, and the controls each informed)
 
 ---
 
