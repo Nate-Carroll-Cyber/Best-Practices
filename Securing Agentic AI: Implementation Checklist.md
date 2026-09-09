@@ -1,6 +1,6 @@
 # Securing Agentic AI: Implementation Checklist
 
-Companion to *Securing Agentic AI: Technical Implementation Framework*, Consolidated 2.7. Every item is self-contained and answerable without opening the framework. Section references in parentheses point to the source text for anyone who wants the reasoning.
+Companion to *Securing Agentic AI: Technical Implementation Framework*, Consolidated 2.8. Every item is self-contained and answerable without opening the framework. Section references in parentheses point to the source text for anyone who wants the reasoning.
 
 **How to use.** Answer each item with implemented, partial, planned, exception approved, or not assessed, and record the evidence and the owner. Do not report a percentage complete. Gate A must pass before production. Gate B must pass before scaling beyond the initial cohort. Gate C runs continuously.
 
@@ -89,6 +89,9 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Tool output never automatically triggers another tool. Each action requires a new proposal and a new decision (§5.2)
 - [ ] Per-call timeouts and output-size limits are enforced, and failed privileged calls are not auto-retried (§5.2)
 - [ ] Per-task volume budgets on records and bytes read, written, and sent are enforced as limits, not alerted on as signals (§5.2)
+- [ ] Recursion depth, chain length, delegation fan-out, and per-task compute and wall-clock budgets are capped, with timeouts on long-running operations (§5.2)
+- [ ] Backpressure and queue limits apply at the boundary, and malformed, oversized, and missing-field requests are rejected before model or tool execution (§5.2)
+- [ ] Consequential operations carry an idempotency key, and a duplicate is rejected or safely replayed rather than re-executed (§5.2)
 - [ ] The runtime declares its capabilities at session start and the session is refused when it cannot supply provenance labels, correlation identifiers, or signed envelopes (§5.2)
 - [ ] Task feasibility is confirmed before the session starts. An objective unachievable within granted scopes is refused rather than run to failure (§5.2)
 - [ ] Runtime-to-broker requests carry a timestamp within a negotiated skew window and a unique request identifier, and replays are rejected (§5.2)
@@ -138,6 +141,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] The entire schema is scanned, including parameter names, enum values, and default values, not only the description field (§6.4)
 - [ ] Display-control characters and ANSI escapes are stripped from schema fields before human review (§6.4)
 - [ ] Any change to the advertised tool list or to a tool definition alerts. A tool that rewrites its own definition is a security event (§6.4)
+- [ ] A connected server that adds a tool, widens a scope, or reaches a new destination requires a fresh consent decision by the accountable owner (§6.4)
 - [ ] Local servers bind to localhost, require authentication and origin validation, and are inventoried on developer workstations (§6.2)
 - [ ] Remote servers use TLS with server authentication, and the OAuth client and authorization-server roles are held by separate components (§6.3)
 - [ ] Token passthrough is prohibited. Downstream calls use a distinct audience-scoped token obtained through delegation or token exchange (§6.3)
@@ -167,6 +171,8 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] AIBOM and SBOM cover models, frameworks, routing components, prompts, MCP servers and tools, repositories and build provenance, packages, containers, datasets, embeddings, licenses, hashes, and review dates (§10)
 - [ ] Every dependency, plugin, and tool server is pinned to a reviewed version. No `latest`, no floating ranges, no runtime dependency fetch (§10)
 - [ ] Every package and image dependency resolves through an internal mirror with no direct public-registry reach (§10)
+- [ ] Maintenance status is verified before adoption and re-verified on schedule. Archived and unmaintained components are not adopted (§10)
+- [ ] CVEs, vendor advisories, and upstream issue trackers are tied to the specific versions in the registry, so an advisory resolves to a named owner and a patch state (§10)
 - [ ] Model artifacts resolve through an internal mirror where the workload loads model weights (§10)
 
 ### A11. Validation and gate
@@ -190,6 +196,7 @@ Apply where Step 0 flagged the condition.
 
 - [ ] Central authenticated service and tool registry, with signed integrity-protected responses (§4.4)
 - [ ] Continuous shadow-server discovery across networks, repositories, developer environments, container registries, and CI/CD, reconciled against the registry in both directions (§4.6)
+- [ ] Successive scans are diffed against each other, not only against the registry, so services that relocate or change between scans are surfaced (§4.6)
 - [ ] Alerting whenever an agent connects to an endpoint absent from the approved registry (§4.6)
 - [ ] Secure-by-default deployment templates so the compliant path is the fast path (§4.6)
 - [ ] A single shared security library supplies authentication, rate limiting, correlation handling, error envelopes, and headers to every component (§6.7)
@@ -254,6 +261,9 @@ Run against every network-reachable component, including fallback and debug serv
 - [ ] Memory write, subagent start, and compaction each produce a broker decision record
 - [ ] Attempt to modify the anchored objective from tool output rejected and logged
 - [ ] Broker failover completes within target with no permit issued during transition
+- [ ] A deliberately runaway task, recursing or fanning out without bound, is contained rather than serviced
+- [ ] A replayed consequential operation carrying a previously seen idempotency key does not take effect twice
+- [ ] A tool server that adds a capability after approval is blocked pending fresh consent
 - [ ] Unsatisfiable task refused at session start rather than run to failure
 - [ ] Compaction preserves an out-of-scope determination and a prior refusal
 - [ ] Reasoning traces absent from every training and fine-tuning dataset
