@@ -299,6 +299,7 @@ The registry in §4.4 answers "where is this service." This section answers the 
 - Alert whenever an agent connects to an endpoint absent from the approved registry. This is the highest-yield detection available for shadow infrastructure, because it catches servers no scan reached.
 - Search repositories for MCP and agent configuration files (`mcp.json` and equivalents) as a first-pass inventory, then reconcile against network scans and the registry.
 - Include common development ports in discovery scans, recognizing that this finds only the careless cases.
+- **Scan differentially, not absolutely.** Tool servers relocate, change ports, and restart under new configurations, so a point-in-time scan compared against the registry misses services that moved between scans. Diff successive scans against each other and investigate what appeared, disappeared, or changed, not only what fails to match the inventory.
 - **Make the compliant path the fast path.** Publish secure-by-default deployment templates with hardening, central identity, and telemetry already wired in. Shadow servers proliferate wherever the sanctioned route is slower than the unsanctioned one; this is a friction problem before it is a policy problem.
 - Require SSO/OIDC on every server and tie every service to central identity. Eliminate default credentials and permissive development configurations before any production use.
 - Use network segmentation so an unknown or forgotten server cannot reach production systems or sensitive data.
@@ -352,6 +353,8 @@ All consequential actions pass through a deterministic enforcement broker (polic
 - Evaluates policy using canonical action data
 - Applies resource, destination, and rate limits
 - Enforces a per-task volume budget on records and bytes read, written, and sent, bound to the declared task at issuance. Exceeding the budget stops the run; it is a limit under §5.3, not a signal under §9.3
+- Bounds task shape as well as task volume. Cap recursion depth, chain length, delegation fan-out, and per-task compute and wall-clock budget, with timeouts on long-running operations. Apply backpressure and queue limits at the boundary so a burst degrades service rather than stalling the workflow, and reject malformed, oversized, and missing-field requests before they reach model or tool execution. A broker that gates every action but bounds none of them is exhaustible by legitimate-looking work
+- Requires an idempotency key on every consequential operation and rejects or safely replays a duplicate rather than re-executing it. Neither the underlying transport nor most tool implementations supply this, so a retried, replayed, or duplicated request will otherwise take effect twice
 - Obtains bound human approval where required
 - Issues task-scoped credentials
 - Executes in the required isolation boundary
@@ -431,6 +434,7 @@ Validate the manifest signature and pinned version at load time, and re-validate
 - Where a signing authority is unavailable, pin at the host on first use (TOFU) and flag every subsequent change. Treat TOFU as a weaker fallback than signature verification, not an equivalent.
 - Require RBAC on any writable schema registry, and require human review before schema edits are promoted. Reject or quarantine unexpected runtime schema changes.
 - Alert on any change to the advertised tool list or to any tool definition. **A tool that rewrites its own definition is a security event, not a version update.**
+- **Re-obtain consent when a connected server changes what it can do or reach.** An approval covers the capabilities and data access declared at approval time. A server that adds a tool, widens a scope, or reaches a new destination requires a fresh decision by the accountable owner. Trust granted once must not be allowed to expand silently.
 - Human approval of an *action* is not mitigation for poisoned *metadata*, because the model consumed the metadata before the approval prompt was generated. Validate metadata before it reaches context.
 - Isolate tools from one another so that one tool cannot induce another into accessing or exporting unrelated data.
 
@@ -814,6 +818,8 @@ Operational requirements that follow from this:
 - Pin every dependency, plugin, and tool server to a reviewed, known-good version. No `latest`, no floating ranges. Upgrade deliberately after review.
 - Do not fetch dependencies dynamically at runtime; build and deploy a fixed, vetted set.
 - Run dependency scanning in CI before release, not only on a periodic schedule.
+- Verify maintenance status before adoption and re-verify on schedule. Archived, unmaintained, and single-maintainer components carry a different risk profile than actively supported ones, and a widely used project is not necessarily a maintained one.
+- Track vulnerabilities as an inventory-linked process rather than a feed to read. Tie CVEs, vendor advisories, and upstream issue trackers to the specific server, plugin, and SDK versions in the registry, so a published advisory resolves to a named owner and a patch state rather than to a general awareness.
 - Sandbox third-party plugins (§5.1) so that one compromised component does not compromise the environment.
 - Monitor and restrict plugin network access, particularly calls to unknown domains.
 - Include developer workstations in the inventory (§6.2).
@@ -866,6 +872,9 @@ Validation must also include **control-environment attack**: the assumption that
 - A memory write, a subagent start, and a compaction each produce a broker decision record; absence of any is a failure.
 - An attempt to modify the anchored objective from tool output or retrieved content is rejected and logged; an approver extension is recorded with scope and approver identity.
 - Broker failover completes within the defined target with no permit issued during the transition.
+- A deliberately runaway task, recursing or fanning out without bound, is contained rather than serviced, and the containment is attributable to a named limit.
+- A replayed consequential operation carrying a previously seen idempotency key does not take effect twice.
+- A tool server that adds a capability or widens its data access after approval is blocked pending a fresh consent decision.
 - A task declared unsatisfiable within its granted scopes is refused at session start rather than run to failure.
 - A compaction preserves an out-of-scope determination and a refusal made before it; a compacted summary that promotes an open question into settled fact is a failure.
 - Reasoning traces are absent from every training and fine-tuning dataset, verified by configuration inspection and by search of the assembled corpus.
@@ -962,6 +971,10 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Evidence hygiene | Reasoning traces excluded from training data | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Pre-validation | Model-under-test escape exercise passed before run | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Detection integrity | Auxiliary-model anomalies and approver overrides reviewed | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Availability | Recursion, fan-out, and compute bounds with backpressure | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Replay safety | Idempotency keys on consequential operations | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Consent lifecycle | Renewed approval on server capability change | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Vulnerability management | CVE tracking linked to the server inventory | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 
 Allowed statuses: `Not assessed`, `Planned`, `Partial`, `Implemented`, `Verified`, `Exception approved`. If coverage percentages are used, document the scoring method, evidence standard, treatment of partial controls, and independent-validation process.
 
@@ -1013,6 +1026,8 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Broker availability engineering with outage treated as an incident (§5.2, §9.4)
 - Enforcement coverage across memory, retrieval, compaction, and delegation (§5.2)
 - Pre-run confirmation that the declared objective is achievable within granted scopes (§5.2)
+- Recursion, chain-length, fan-out, and compute bounds with backpressure at the broker (§5.2)
+- Idempotency keys on every consequential operation (§5.2)
 - Explicit scope-setting instructions stating prohibited actions, phrased as rules rather than environmental claims (§7.8)
 - Reasoning traces excluded from training and fine-tuning data, verified by test (§9.2)
 - Reasoning-trace retention or logging as security evidence for all workloads where the platform exposes traces (§9.2)
@@ -1041,6 +1056,9 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Adversarial pre-validation using the model under test before tool-granting runs (§11)
 - Compaction preserving security determinations, with pre-compaction state retained for review (§7.1, §9.4)
 - Auxiliary-model anomaly routing and approver-override review (§9.3)
+- Renewed consent when a connected server changes capabilities or data access (§6.4)
+- Inventory-linked CVE and advisory tracking with maintenance-status verification (§10)
+- Differential discovery scanning for relocated and modified services (§4.6)
 - Guardrail verdicts kept out of any reward or selection surface (§7.8)
 - Cross-stream corroboration coverage for compromise-window reconstruction (§9.5)
 - Memory provenance and lifecycle controls
@@ -1083,6 +1101,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Compaction:** Summarization of prior context to fit a context window; a decision-eligible event that must preserve provenance labels and security determinations rather than only conclusions (§7.1, §5.2).
 - **Cross-run collective:** Independent agent runs that share capabilities, credentials, or data through external channels and thereby persist beyond any single session (§9.3, §9.4).
 - **Cross-stream corroboration:** Reconciling the agent-authored audit stream against independently authored record streams (broker decisions, KMS/CSP logs, tool-side logs, network telemetry) that the agent runtime cannot write; the required control for reconstructing events during a live compromise.
+- **Differential discovery:** Comparing successive infrastructure scans against each other rather than only against the registry, so services that relocate or change between scans are surfaced (§4.6).
 - **DEFER:** A broker disposition for a concern that cannot be resolved synchronously, with a bounded resolution window and a timeout that resolves to DENY; distinct from a human approval request (§5.2).
 - **DID:** Decentralized Identifier (W3C); requires a method defining issuance, resolution, rotation, and revocation.
 - **DPoP:** Demonstrating Proof of Possession; binds token use to a key.
@@ -1090,6 +1109,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Evaluation awareness:** A system's inference that it is being tested rather than deployed; correlated with behavioral divergence, and a limit on how far evaluation results generalize to production (§11).
 - **Fail closed:** The property that a timeout, exception, or missing configuration produces a denial or a refusal to start, never a permit or an unauthenticated service.
 - **HITL:** Human-in-the-loop review or approval for defined actions.
+- **Idempotency key:** A caller-supplied identifier that lets the broker recognize a duplicated or replayed consequential request and decline to execute it a second time (§5.2).
 - **Intent anchoring:** Holding the user's original objective in trusted, structurally separate system instructions and validating that proposed actions still serve it (§7.8).
 - **Internal mirror:** The organization-operated registry through which every dependency, image, and model artifact is resolved; the single validation and egress point for third-party artifacts (§10).
 - **JIT:** Just-in-time issuance of short-lived, scoped credentials.
@@ -1128,6 +1148,7 @@ Maintain dated references to the authoritative versions the organization actuall
 - CSA MAESTRO and MITRE ATLAS threat-modeling sources
 - OWASP Top 10 for LLM Applications and OWASP agentic security guidance
 - Current MCP protocol and authorization specifications
+- NSA, Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation (U/OO/6030316-26, May 2026)
 - OWASP Agent Control Standard (ACS), as a candidate runtime-control interface under the §6.6 evaluation rule; any adoption sets fail-closed postures, uses the Crypto and Audit profiles, and constrains the Guardian agent layer to narrowing only
 - CIS Kubernetes Benchmark (for container/orchestration hardening)
 - Provider model-service documentation for model identifiers, regions, and retention terms
@@ -1145,14 +1166,15 @@ Secure agentic AI requires independently enforced controls **around** the model.
 
 ## Version History
 
-**Version:** Consolidated 2.7
+**Version:** Consolidated 2.8
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
 
-**Changes from 2.6:** task feasibility confirmed before session start and non-progress as a signal (§5.2, §9.3); explicit scope-setting instructions phrased as rules rather than environmental claims (§7.8); compaction preserves security determinations and is retained for retrospective review (§7.1, §9.4); reasoning traces excluded from training and fine-tuning data (§9.2); guardrail verdicts kept out of any reward or selection surface (§7.8); auxiliary-model anomalies, approver overrides of detections, and repeated non-progress added as monitoring signals (§9.3); adversarial pre-validation using the model under test, limits of behavioral audits, and six control-environment attack cases (§11); three new regression tests (§11); seven new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for compaction, evaluation awareness, and monitor-as-target (§17); reference additions (§18). Sources for this revision include the UK AI Security Institute incident report INC-2026-07-28-01 (4 August 2026), Anthropic's cybersecurity-evaluation incident disclosures (30 July 2026) and alignment and security follow-up (31 August 2026), and published reward-hacking generalization research.
+**Changes from 2.7:** task-shape bounds covering recursion depth, chain length, fan-out, compute budget, and backpressure (§5.2); idempotency keys on consequential operations (§5.2); renewed consent on server capability or data-access change (§6.4); maintenance-status verification and inventory-linked CVE tracking (§10); differential discovery scanning (§4.6); three new regression tests (§11); four new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for idempotency key and differential discovery (§17). Sourced from the MCP Security Best Practices consolidation and NSA, Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation, U/OO/6030316-26, May 2026.
+**Changes from 2.6 (delivered in 2.7):** task feasibility confirmed before session start and non-progress as a signal (§5.2, §9.3); explicit scope-setting instructions phrased as rules rather than environmental claims (§7.8); compaction preserves security determinations and is retained for retrospective review (§7.1, §9.4); reasoning traces excluded from training and fine-tuning data (§9.2); guardrail verdicts kept out of any reward or selection surface (§7.8); auxiliary-model anomalies, approver overrides of detections, and repeated non-progress added as monitoring signals (§9.3); adversarial pre-validation using the model under test, limits of behavioral audits, and six control-environment attack cases (§11); three new regression tests (§11); seven new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for compaction, evaluation awareness, and monitor-as-target (§17); reference additions (§18). Sources for this revision include the UK AI Security Institute incident report INC-2026-07-28-01 (4 August 2026), Anthropic's cybersecurity-evaluation incident disclosures (30 July 2026) and alignment and security follow-up (31 August 2026), and published reward-hacking generalization research.
 **Changes from 2.5 (delivered in 2.6):** broker scope extended to memory, retrieval, compaction, delegation, and registration actions (§5.2); session-start capability declaration and refusal (§5.2); runtime-to-broker replay protection (§5.2); DEFER disposition (§5.2); broker availability requirement with outage treated as an incident (§5.2, §9.4); approver-only intent extension with audit entry (§7.8, §9.1); five new regression tests (§11); three new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for capability declaration and DEFER (§17); ACS added as a candidate reference (§18).
 **Changes from 2.4 (delivered in 2.5):** approval status does not reduce classification (§2.1); research-workload exemption conditions (§2.1, §7.6); model routing layer named as a trust zone and AIBOM entry (§3.3, §10); cached fetch service scoped as a transitive path and trifecta leg (§3.3, §7.8); secret-scanning partner enrollment as primary sweep mechanism (§4.5); per-task volume budgets enforced at the broker (§5.2); publication to run-readable locations gated as a consequential action (§5.2, §7.5, §9.3); class-scoped stop dependencies on registry and out-of-band control (§5.3); deterministic escalation for dependency timeouts (§6.5.3); aggregate-aware output classification (§7.5); insider-model trifecta case (§7.8); principal-binding assurance limit consolidated into §9.5 (§9.1); reasoning-trace retention for all workloads where available, with fidelity recording and legal review (§9.2, §16); broker-compromise residual (§9.5); mirror population governance (§10); new coverage rows (§14); Priority 1 split into unconditional and classification-triggered (§16); glossary additions (§17); numbering note corrected; version history moved to the end of the document.
 **Changes from 2.3 (delivered in 2.4):** research and evaluation workloads added to system classification (§2.1); independent dual-layer egress, boundary self-modification prohibition, transitive-path closure, and cached fetch service (§3.3); public-platform token sweep (§4.5); class-scoped evaluation shutdown (§5.3); reasoning traces as security evidence (§9.2); platform and host telemetry baseline plus four new monitoring signals (§9.3); eradication scope, retrospective run review, and cross-run collective response (§9.4); internal mirrors and cache integrity (§10); control-environment attack in threat model, three new regression tests, and two new verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
 **Changes from 2.2 (delivered in 2.3):** sixth governing principle on capability combinations; trifecta added to system classification (§2.1); server-side authorization decisions, OAuth 2.1, and resource-indicator token binding (§4.3); server registration and shadow discovery (§4.6); per-server kill switch (§5.3); OAuth client/authorization-server role separation (§6.3); infrastructure-enforced tenant isolation and ingestion-time classification (§7.4); intent integrity and the capability trifecta (§7.8); log-store minimization and retention (§9.1); SIEM/XDR integration and three new monitoring signals (§9.3); compromise-scenario drills (§9.4); tenant-isolation and telemetry tests plus verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
 **Changes from 2.1 (delivered in 2.2):** secret custody and model-context exclusion, and untrusted project configuration (§4.5); local-transport binding and origin validation (§6.2); full-schema metadata scanning, display-control stripping, and TOFU pinning (§6.4); error design (§6.5); service surface hardening baseline (§6.7); safe command and process execution (§7.6); model invocation guardrails (§7.7).
 
-**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.7 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
+**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.8 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
