@@ -295,3 +295,232 @@ No release without an Inspect run against the production provider that meets the
 | "CC mode protects the workload" | From the host, or the host from the workload? |
 | "We tested it with Inspect" | Against which sandbox provider? |
 | "Approvals are handled" | By an external PDP with signed decisions, or by pattern matching in the loop? |
+| "Secrets are in Vault" | Does the model runtime ever hold the value, or only a handle the broker resolves at execution time? |
+| "We can kill a session" | Can you halt every session of this workload type in one operation, from infrastructure the sandbox cannot reach? |
+| "Tools are allowlisted" | Pinned by digest, schema scanned before context, and re-consented when the server changes what it advertises? |
+
+---
+
+**1. "The agent runs in a sandbox." Ask which runtime class.**
+
+Why. "Sandbox" has no technical meaning. It is used for a Docker container, a separate namespace, a VM, a Python venv, and a system prompt that says "you cannot access the network." The runtime class is the only word that forces the speaker to name the boundary.
+
+Passing answer. Names one of runsc (gVisor), kata-fc or kata-qemu (Kata), or Fargate, and says how it is enforced. "Kyverno rejects any pod in the sandbox namespace without runtimeClassName set to gvisor."
+
+Failing answers and what they reveal.
+- "Docker." Container packaging, runc boundary, shared kernel.
+- "It's containerized." Same thing, said less precisely.
+- "We drop capabilities and run non-root." Scope reduction inside runc. Good hygiene, not a boundary.
+- "The model can't run code, it only calls tools." Then ask what the tools run and where. A bash tool is code execution.
+- "It's in its own namespace." Kubernetes namespaces are a scheduling and RBAC scope, not a kernel boundary.
+
+Follow-ups. Which node pool, and what else runs on it. Who can change the RuntimeClass object. Is the RuntimeClass mandatory or just available.
+
+Verify.
+```
+kubectl get pod <name> -n <ns> -o jsonpath='{.spec.runtimeClassName}'
+kubectl get runtimeclass
+kubectl get clusterpolicy -o yaml | grep -i runtimeClassName
+```
+Empty first result means runc. Empty third result means nothing enforces it.
+
+---
+
+**2. "It's on Kubernetes so it's isolated." Ask whether runtimeClassName is set and enforced by admission.**
+
+Why. Kubernetes is a scheduler with an optional policy layer. Every isolation property people attribute to it is off by default. A fresh cluster has no NetworkPolicy, no Pod Security Standards, default SA tokens mounted, and IMDS reachable.
+
+Passing answer. Lists the admission controller, the policy it enforces, and the namespace it applies to. "Gatekeeper constraint on the sandbox namespace requires runtimeClassName, denies hostPath, hostNetwork, hostPID, privileged, and enforces PSS restricted."
+
+Failing answers.
+- "We use managed node groups." The AMI ships runc only.
+- "Pods can't see each other." Only true with NetworkPolicy and a CNI that enforces it.
+- "We have RBAC." RBAC controls the API, not the kernel.
+- "Security context is set in the manifest." Manifests are advisory until admission enforces them. Anyone with deploy rights can omit the field.
+
+Follow-ups. Which CNI, and does it enforce NetworkPolicy (some do not). Is automountServiceAccountToken false on sandbox pods. Is the orchestrator on a different node pool from the sandboxes. What does an escaped process find on the node.
+
+Verify.
+```
+kubectl get ns <ns> -o jsonpath='{.metadata.labels}'          # PSS labels present?
+kubectl get networkpolicy -n <ns>                              # default deny exists?
+kubectl get pod <name> -n <ns> -o jsonpath='{.spec.automountServiceAccountToken}'
+kubectl run probe --rm -it -n <ns> --image=busybox -- wget -qO- --timeout=2 http://169.254.169.254/  # should fail
+```
+Try to apply a pod with no runtimeClassName. If it schedules, admission is not enforcing.
+
+---
+
+**3. "Egress is locked down with NetworkPolicy." Ask what does domain-level filtering.**
+
+Why. NetworkPolicy is L3/L4. It allows or denies CIDRs and ports. An allowlisted CIDR for a CDN, a cloud provider range, or 0.0.0.0/0 on port 443 is an open door to every domain behind it. Exfiltration goes to a domain, not an IP.
+
+Passing answer. Names a proxy with a domain allowlist as the only permitted destination from the sandbox namespace, a second independent layer outside the cluster, and a log with session ID on every request. "Sandbox pods can only reach the Envoy egress namespace. Envoy enforces a per-session allowlist and logs to the SIEM. Network Firewall enforces an FQDN list independently."
+
+Failing answers.
+- "Egress is default deny except HTTPS." HTTPS to where.
+- "We go through a NAT gateway." A NAT gateway is a route.
+- "DNS is restricted." Ask whether both UDP and TCP 53 are handled, and whether the resolver itself is allowlisted or whether the pod can query any resolver over IP.
+- "Istio handles it." Ask whether an egress gateway is configured with a destination allowlist or whether the mesh is just doing mTLS.
+- "The sandbox has no internet." Then ask about transitive paths. Package mirrors, internal APIs, caches, and shared services that can reach the internet on the pod's behalf inherit the pod's restrictions.
+
+Follow-ups. Can the workload identity create a load balancer, private link, or DNS record. Is that denied at cloud IAM or just not requested. What are the two layers and does either read the other's config. What happens when the proxy is down (should be deny).
+
+Verify. From inside a representative sandbox pod, attempt to reach an allowed domain, a disallowed domain, a raw IP on 443, an alternate DNS resolver, and IMDS. Expect exactly one success. Then confirm the disallowed attempt appears in both the proxy log and the firewall log. A block at only one layer is a failure.
+
+---
+
+**4. "The agent needs the GPU." Ask whether for inference or for executing code.**
+
+Why. This is the tier-conflation question. Inference (the model producing tokens) needs a GPU. Execution (running what the model produced) does not. When the two are placed together, model-generated code lands on the GPU node, which is the most valuable and least sandboxable host in the estate.
+
+Passing answer. "The execution tier calls the inference endpoint over the network. Sandbox pods have no device plugin, no GPU resource request, and are on a separate node pool."
+
+Failing answers.
+- "Latency." Network round trip to an inference endpoint is milliseconds. Sandbox cold start is seconds. Latency is not the constraint.
+- "The agent loads the model itself." Then the agent process has the weights and the execution surface in one place.
+- "We use MIG so it's isolated." MIG isolates GPU partitions from each other. It does nothing for a process on the host CPU.
+- "It runs a local model for privacy." Fine, but the model server and the code executor are still two processes and should be two pods.
+
+Follow-ups. If a workload genuinely needs GPU inside the sandbox (fine-tuning, a research eval), which VMM. Firecracker has no passthrough. gVisor's nvproxy is a new parsing layer. Kata with VFIO on QEMU or Cloud Hypervisor hands a whole GPU or vGPU to one VM. Each is a different threat model from the CPU sandbox.
+
+Verify.
+```
+kubectl get pod <name> -n <ns> -o jsonpath='{.spec.containers[*].resources.limits}'
+```
+Any `nvidia.com/gpu` on a sandbox pod is a finding. Check the node pool label and taint for the sandbox namespace against the GPU node pool.
+
+---
+
+**5. "CC mode protects the workload." Ask from the host, or the host from the workload.**
+
+Why. Confidential computing has one direction. It protects what is inside the enclave from an untrusted host. It does not protect the host from what the enclave's controlling process does. The CPU-side serving process still runs under the host kernel, parses untrusted input, and can be exploited like any other daemon.
+
+Passing answer. "CC mode is there so a compromised hypervisor cannot read the weights or KV cache. It is not the execution sandbox. The serving process is on dedicated nodes with runc hardening and we accept that as the residual for the inference tier, with the LLM firewall in front."
+
+Failing answers.
+- "The GPU is encrypted, so it's safe." Encrypted for whom.
+- "Attestation proves the environment is secure." Attestation proves the enclave is genuine and unmodified at load. It says nothing about a bug in vLLM triggered by a prompt after load.
+- "The TPM covers it." The server TPM measures the host boot chain. GPU attestation is SPDM through NVIDIA's on-die root of trust, verified with nvtrust or NRAS.
+- "NVLink is inside the enclave." Not on Hopper. Multi-GPU NVLink encryption arrives with Blackwell.
+
+Follow-ups. What is the threat model that justified the CC performance cost. Is composite attestation (CPU TEE plus GPU) gated before weights decrypt, or is it logged and ignored. What handles the serving-process-to-host direction.
+
+Verify. Ask for the attestation flow diagram and the release-gate condition. Ask what happens when attestation fails. If the answer is "an alert," the gate is not a gate. Ask for the vLLM or Triton CVE patch cadence, since that process is the actual exposure.
+
+---
+
+**6. "We tested it with Inspect." Ask against which sandbox provider.**
+
+Why. Inspect's default provider is Docker. A passing eval against Docker says the agent behaved acceptably inside a runc container on a research box. It says nothing about gVisor syscall gaps, Kata devmapper behavior, Fargate constraints, or the production egress proxy, because none of them were in the loop.
+
+Passing answer. "The Inspect task sets sandbox to our Kubernetes provider, which schedules onto the same RuntimeClass, NetworkPolicy, and egress proxy as production, in the CI account. The adversarial dataset includes injection, hostile MCP tools, and escape attempts. Scanners run for evaluation awareness and deception. The failure threshold gates the deploy."
+
+Failing answers.
+- "We ran the CTF benchmarks." Those measure offensive capability. They are not robustness tests of your boundary.
+- "It passed the eval." Passed what scorer. A model-graded scorer has the grader's blind spots. Ask who read the transcripts.
+- "We tested the model." The model is one input. The boundary, the policy, and the proxy are the things under test.
+- "Same Docker image." Same image, different runtime, different result.
+
+Follow-ups. Did the model under test get asked to escape its own sandbox before it was granted tools. Were the control-environment cases run (instructions addressed to the guardrail, obfuscated policy-relevant values, self-modification of policy, second-session spawning, violation buried in a long diff, monitor tampering). Are the eval logs published somewhere the security team can read them.
+
+Verify. Open the task file and read the `sandbox=` argument. Open an eval log and check the sandbox environment recorded in the task info. If it says docker and prod is not docker, the test does not cover prod.
+
+---
+
+**7. "Approvals are handled." Ask whether by an external PDP with signed decisions, or by pattern matching in the loop.**
+
+Why. An approval check that lives inside the agent loop is part of the thing being attacked. The model's context has already been influenced by whatever the attacker put in a tool result before the approval prompt is generated. Regex on tool names and arguments is defeated by obfuscation and by argument construction at runtime. And an approval that is not bound to the exact action can be reused against a different action (TOCTOU).
+
+Passing answer. "Every consequential action goes to OPA out of process. OPA writes a decision log to Object Lock storage the orchestrator cannot modify. Approve-required actions block on a Temporal signal. The approval record contains a hash of the canonical action, the approver's identity from the IdP, and a timestamp. The orchestrator re-checks the hash immediately before exec. Timeout is deny."
+
+Failing answers.
+- "The agent asks for confirmation on destructive commands." The agent decides what is destructive. It is the party being subverted.
+- "We have a list of blocked commands." Bypassed by character-code assembly, aliasing, and encoding.
+- "Approvals are in the transcript." The transcript is authored by the runtime under test.
+- "A human approves in Slack." Approves what, exactly. If the record is "yes" with no canonical action hash, the approval binds to nothing.
+- "Inspect's approval policy." That is the prototype shape and it runs in-process.
+
+Follow-ups. What actions are gated (tool calls only, or also memory writes, compaction, subagent start, publication to shared locations). What happens when the PDP is unreachable (should be deny and should page). Is the decision log a second stream the agent cannot write, so it corroborates the transcript during a compromise window. Are denials retryable (they should not be, and repeated denials should alert).
+
+Verify. Pull one approval record and check it contains the canonical action hash, approver principal from an IdP assertion, policy version, and correlation ID. Pull the matching PDP decision log entry and the matching exec bridge log by correlation ID. If any of the three is missing or authored by the same process, the approval is one stream and can be forged by a live compromise. Then replay the approval against a modified action and confirm it is rejected.
+
+---
+
+**8. "Secrets are in Vault." Ask whether the model runtime ever holds the value, or only a handle the broker resolves at execution time.**
+
+Why. Vault answers where the secret rests. It does not answer where the secret travels. The common pattern is that the orchestrator fetches the secret from Vault and injects it into the pod as an environment variable or a file, at which point the model-generated code can `env`, `cat`, or `os.environ` it into the transcript, a tool result, or an outbound request. A secret that is in the same process as model-generated code is in the model's context, whether or not it was ever pasted into a prompt.
+
+Passing answer. "The sandbox never receives a credential. The tool call references an opaque handle. The exec bridge or a credential-resolving proxy in the orchestrator zone swaps the handle for a short-lived token at the moment of the downstream call. The Vault lease TTL equals the session TTL and is revoked in the teardown activity."
+
+Failing answers.
+- "It's injected as an env var from Vault Agent." That is Vault-backed delivery of a static exposure. Anything in the pod's environment is readable by the workload.
+- "Secrets are mounted at /vault/secrets." Same problem via the filesystem.
+- "The model doesn't see it, only the tool does." If the tool runs inside the sandbox, the tool and the model's code share a process boundary. Ask where the tool executes.
+- "We redact secrets from logs." Redaction is after the fact. The question is whether the value was ever present.
+- "We rotate every 24 hours." A 24-hour window is not short-lived for an agent session that lasts eight minutes.
+
+Follow-ups. What is the bootstrap secret the pod uses to authenticate to anything, and is it scoped to Vault auth only. Are credentials the agent discovers (in a repo, a config file, a tool response) treated as exposed and rotated. Has the log retention window ever been shorter than a credential lifetime, and if so was everything from that period rotated by default. Are the organization's token issuers enrolled in the public code host and package registry secret-scanning partner programs.
+
+Verify.
+```
+kubectl exec <sandbox-pod> -n <ns> -- env | grep -iE 'token|key|secret|password|aws_|vault'
+kubectl exec <sandbox-pod> -n <ns> -- find / -path /proc -prune -o -type f \( -name '*.json' -o -name '*.env' -o -name '*.pem' \) -print 2>/dev/null | head
+kubectl get pod <sandbox-pod> -n <ns> -o jsonpath='{.spec.volumes[*].secret.secretName}'
+```
+Any hit is a finding. Then trace one real tool call end to end and identify the exact process that holds the resolved credential. If that process runs inside the RuntimeClass boundary, the answer to the question is "the runtime holds it."
+
+---
+
+**9. "We can kill a session." Ask whether you can halt every session of this workload type in one operation, from infrastructure the sandbox cannot reach.**
+
+Why. Per-session termination is the easy case and it is the wrong unit when the concern is a class of runs. If a tool server is found to be poisoned, a model family is found to be misbehaving, or one run is suspected of having shared credentials with others through an external channel, the incident spans every session that shares that property. Enumerating sessions by hand under pressure is how a stop becomes partial. And a stop mechanism that runs on the same control plane the workload can reach is inside the threat model.
+
+Passing answer. "Sessions carry labels for workload type, agent type, model family, and tool servers in use. The stop path selects by label from the registry, revokes every matching Vault lease and STS session, terminates the pods, and adds the class to a deny list that admission enforces so nothing restarts. It runs from the InfoSec account under an identity the workload pool cannot assume. Latched until an operator resets it. Tested quarterly with synthetic sessions."
+
+Failing answers.
+- "We can `kubectl delete pod`." One pod. From a workstation with cluster access. Pods restart if a controller owns them.
+- "We scale the deployment to zero." Stops new work. Does not revoke credentials already issued, and the workload that was running may have already shared them.
+- "There's a kill switch in the app." The app is the thing being subverted. A kill switch inside the agent loop is a flag the agent can find.
+- "We disable the API key." Only the keys issued through that path. Not the ones the agent discovered.
+- "The breaker auto-recovers." Acceptable for idempotent low-risk operations. Privileged, destructive, financial, and externally visible actions stay latched until a human resets.
+
+Follow-ups. What is the enumeration source, and does it include unregistered servers (it cannot, which is why registration is a deployment gate). How long from decision to confirmed halt, measured rather than estimated. Is "halted" confirmed by observation (no pods, no valid leases, no egress) or assumed from the command returning. Can a specific tool server be disabled, its credentials revoked, and its network reachability cut in minutes without a deployment cycle. Who is authorized to trigger it and who is paged.
+
+Verify. Run the stop against a synthetic class in staging. Confirm four things independently. No pods with the class label remain. Every Vault lease with the class tag shows revoked. Every STS session with the class tag is invalidated (check CloudTrail for the revoke and for any subsequent denied call). The egress proxy log shows no requests from the class after the stop timestamp. If any of the four requires asking the orchestrator, the stop depends on the thing it was meant to stop.
+
+---
+
+**10. "Tools are allowlisted." Ask whether they are pinned by digest, schema-scanned before context, and re-consented when the server changes what it advertises.**
+
+Why. An allowlist by name is a list of names. The tool behind the name can change its code, its schema, its description, its default values, or its destinations without the name changing. Every metadata field reaches model context and is therefore instruction-grade untrusted content, and the model consumes it before any approval prompt is generated, so human approval of an action is not a mitigation for poisoned metadata. Default values are the field most often skipped in review and the most useful to an attacker because they take effect without the model mentioning them.
+
+Passing answer. "The registry holds a signed manifest per tool with artifact digest, input and output schemas, declared permissions and destinations, owner, and review date. At every connection the gateway compares the live tool list and every schema field against the manifest and blocks on mismatch. Names, parameter names, descriptions, enum values, and defaults are scanned before they enter context, with ANSI and display-control characters stripped first. A server that adds a tool, widens a scope, or reaches a new destination is quarantined until the accountable owner re-approves. Tool responses are validated against the output schema before ingestion."
+
+Failing answers.
+- "We only connect to approved MCP servers." Approved when, and what did they advertise then.
+- "Tools are pinned to a version." A version tag is mutable. A digest is not.
+- "We review tool descriptions." Descriptions are one field. Ask about parameter definitions, enums, and defaults.
+- "The server is ours, we trust it." A tool that rewrites its own definition is a security event regardless of who owns the server.
+- "Tool output goes straight to the model." Output is untrusted content on the same terms as a web page.
+- "Local STDIO servers are safe because they're local." Local transport says nothing about the implementation, and a server bound to 0.0.0.0 is reachable from the network segment.
+
+Follow-ups. Is registration a deployment gate (unregistered server fails to obtain credentials) or a courtesy. Does anything alert when an agent connects to an endpoint absent from the registry. Where is the signing authority, and if there is none, is TOFU pinning in place and flagged as the weaker fallback. Does the client forward its own bearer token downstream, or exchange it for an audience-scoped one. Are project-level MCP config files in repositories loaded automatically, or only after an explicit trust decision.
+
+Verify.
+```
+# Live tool list as JSON, diffed against your signed manifest
+diff <(docker mcp tools list --format json | jq -S .) <(jq -S . manifests/<server>.json)
+
+# Full schema for one tool (description, params, defaults) for review
+docker mcp tools inspect <tool-name>
+
+# Search repos for config that pre-registers servers or pre-approves tools
+rg -l 'mcp\.json|"mcpServers"|autoApprove|alwaysAllow' --hidden
+
+# Display-control characters in schema fields
+docker mcp tools list --format json | grep -P '\x1b\[|\x{200b}|\x{202e}'
+```
+Adapt the gateway commands to whatever gateway is in use. The diff should be empty. The repo search should return only reviewed files. The control-character grep should return nothing. Then change one default value on a test server and confirm the gateway blocks the connection and raises an alert rather than accepting the new schema.
+
+---
