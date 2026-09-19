@@ -2,7 +2,7 @@
 
 ## How to use this
 
-Ten questions. Each one targets a claim that is commonly made about agent deployments and commonly untrue. The reviewer asks the question, records the answer verbatim, requests the listed evidence, runs the verification, and scores the item. The questionnaire is complete when every item has a score and every score below 3 has an entry in the findings register.
+Eleven questions. Each one targets a claim that is commonly made about agent deployments and commonly untrue. The reviewer asks the question, records the answer verbatim, requests the listed evidence, runs the verification, and scores the item. The questionnaire is complete when every item has a score and every score below 3 has an entry in the findings register.
 
 Interview answers are recorded but never scored on their own. Only evidence and verification results move the score.
 
@@ -20,7 +20,7 @@ Items 1, 2, 3, 7 and 8 are gating. A score below 3 on any gating item blocks pro
 
 ## Reviewer inputs
 
-Before the session, obtain: the architecture diagram with trust boundaries, the sandbox namespace manifests and admission policies, the egress proxy configuration, one full session transcript with correlation IDs, one approval record, the Inspect (or equivalent) task file and one eval log, the tool registry or manifest store, and read access to a representative non-production cluster.
+Before the session, obtain: the architecture diagram with trust boundaries, the sandbox namespace manifests and admission policies, the egress proxy configuration, one full session transcript with correlation IDs, one approval record, the Inspect (or equivalent) task file and one eval log, the tool registry or manifest store, the signed AIBOM for the system under review with its promotion gate configuration, and read access to a representative non-production cluster.
 
 ---
 
@@ -130,6 +130,7 @@ Score: ___ Notes: ___
 - What happens when the proxy is down (must be deny)
 - Do the two layers share configuration or a control plane
 - Which shared services can reach the internet on the pod's behalf
+- Does the transitive path inventory match the flows and zone crossings recorded in the AIBOM (Item 11)
 
 **Verification.** From inside a representative sandbox pod, attempt five connections. An allowed domain, a disallowed domain, a raw IP on 443, an alternate DNS resolver, and the metadata endpoint. Exactly one succeeds. Confirm the disallowed attempt appears in both the proxy log and the second-layer log. A block at only one layer is a failure.
 
@@ -231,6 +232,7 @@ Score: ___ Notes: ___
 **Follow-ups.**
 - Were instructions addressed to the guardrail, obfuscated policy-relevant values, self-modification of policy, second-session spawning, violations buried in long diffs, and monitor tampering all tested
 - Where are eval logs published and who reads them
+- Does the model identifier in the eval log match the model component the AIBOM records for production, or has a provider alias moved since the eval ran
 
 **Verification.** Open the task file and read `sandbox=`. Open an eval log and read the recorded sandbox environment. If either says docker and production does not, the test does not cover production.
 
@@ -368,8 +370,9 @@ Score: ___ Notes: ___
 - Output schema validation before tool responses enter context
 - Registration-as-gate evidence (unregistered server fails to obtain credentials)
 - Unregistered-endpoint alerting
+- Approved tool definition hashes recorded in the AIBOM (Item 11)
 
-**Pass criteria.** Digest pinning, full-schema scan before context, drift blocks connection, capability change triggers re-approval, responses validated, registration gates deployment, connections to unregistered endpoints alert. Client token is exchanged for an audience-scoped downstream token, never forwarded.
+**Pass criteria.** Digest pinning, full-schema scan before context, drift blocks connection, capability change triggers re-approval, responses validated, registration gates deployment, connections to unregistered endpoints alert, approved definition hashes match the AIBOM. Client token is exchanged for an audience-scoped downstream token, never forwarded.
 
 **Red-flag answers (score 0).**
 - "We only connect to approved MCP servers"
@@ -392,6 +395,58 @@ rg -l 'mcp\.json|"mcpServers"|autoApprove|alwaysAllow' --hidden
 docker mcp tools list --format json | grep -P '\x1b\[|\x{200b}|\x{202e}'
 ```
 The diff must be empty. The repo search must return only reviewed files. The control-character grep must return nothing. Then change one default value on a test server and confirm the gateway blocks the connection and alerts rather than accepting the new schema.
+
+Score: ___ Notes: ___
+
+---
+
+## Item 11. Dependency record
+
+**Claim being tested.** "We have an AIBOM."
+
+**Question.** What scope and completeness does the AIBOM declare, what regenerates it, and which gate refuses a release without a current one?
+
+**Why it matters.** An inventory that nothing refreshes and nobody is required to read describes a system that no longer exists, and it invites confidence it cannot support. A parts list without flows cannot say what reaches what. An absent entry means nothing unless the document claims completeness for a declared scope. A hosted model alias can be repointed by the provider with no local release, so the model that was evaluated may not be the model in production.
+
+**Evidence required.**
+- The AIBOM for the system under review, with a header stating graph type, scope including exclusions, completeness claim, generation method, and author, reviewer, and approver
+- Directed data flows and trust-zone boundary crossings with stable identifiers, and at least one threat model entry that references them
+- Hosted model recorded as an endpoint component referencing a model component with a version
+- Pipeline step that generates and signs the AIBOM, with the list of regeneration triggers
+- Promotion gate configuration that rejects a missing, stale, or incomplete-for-tier AIBOM
+- Audit record sample showing the resolved model identifier per invocation
+- Declared, reachable, and observed dependency reconciliation for one agent, with the source of the observed view named
+- Supplier disclosure records, with each non-disclosure logged against a named residual-risk owner
+- AIBOM storage location and its write permissions
+
+**Pass criteria.** Scope and completeness are declared and truthful, with unknowns recorded as unknowns. Flows and boundary crossings are present, not only components. The AIBOM is generated and signed in the pipeline and regenerates on defined triggers including supplier-side model changes. A gate blocks promotion without a current one. The observed dependency view comes from broker or platform logs, not from the agent. Credentials appear as method, handle, and scope only. Workload identities cannot write to the AIBOM store.
+
+**Red-flag answers (score 0).**
+- "We have an SBOM"
+- "It's in the model card"
+- "The architecture diagram covers that"
+- "We generated one at launch"
+- "The vendor has a SOC 2"
+- A completeness claim over the internals of a hosted model or a procured SaaS feature
+- "The agent logs which tools it used" offered as the observed view
+- Any credential value in the document
+
+**Follow-ups.**
+- What does the absence of a dataset or tool from this document mean
+- How was the last supplier-side model change detected, and how long until the AIBOM reflected it
+- Are the author and the approver the same person or team
+- For fine-tuned models, is there a pipeline-scope AIBOM linked to the artifact-scope one
+- Which incident, audit, or procurement decision last read this document
+
+**Verification.** Commands below assume CycloneDX JSON and cosign. Substitute the equivalent for the format and signer in use.
+```
+cosign verify-blob --key <pubkey> --signature aibom.json.sig aibom.json
+jq '.metadata | {timestamp, authors, tools}' aibom.json
+jq '.compositions[] | {aggregate, assemblies}' aibom.json
+jq -r '.components[] | select(.type=="machine-learning-model") | "\(.name) \(.version)"' aibom.json
+grep -iE 'api[_-]?key|secret|token|password|BEGIN .*PRIVATE' aibom.json
+```
+The signature must verify. The credential grep must return nothing. Then, using the AIBOM alone, state which model version is running, what it was tuned on, who the upstream supplier is, and what the license permits. Every question the document cannot answer is a finding. Compare the recorded model version against the resolved model identifier in the most recent audit records. Compare the recorded tool definition hashes against the live gateway (Item 10). Pull a week of broker decision logs and list every destination absent from the AIBOM. Each one is a shadow dependency. In staging, attempt one promotion with the AIBOM removed and one with an AIBOM older than the last trigger event. Both must be rejected. Attempt a write to the AIBOM store under the sandbox workload identity. It must be denied.
 
 Score: ___ Notes: ___
 
@@ -420,6 +475,7 @@ Severity guide. Critical for any gating item at 0 or 1. High for any gating item
 | 8. Secret custody | Yes | |
 | 9. Containment | No | |
 | 10. Tool integrity | No | |
+| 11. Dependency record | No | |
 
 Production approval requires every gating item at 3 or above and no Critical findings open.
 
