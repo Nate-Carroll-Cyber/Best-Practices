@@ -95,7 +95,7 @@ Every production agent must maintain:
 - System and data-flow diagrams with trust boundaries
 - Threat model and abuse-case analysis
 - Tool and capability inventory
-- Model, software, data, and prompt provenance records
+- AIBOM with declared scope and completeness claim (§10), carrying model, software, data, and prompt provenance
 - Security and privacy test results
 - Human-oversight and escalation procedures
 - Incident-response and recovery plans
@@ -437,6 +437,7 @@ Validate the manifest signature and pinned version at load time, and re-validate
 - **Re-obtain consent when a connected server changes what it can do or reach.** An approval covers the capabilities and data access declared at approval time. A server that adds a tool, widens a scope, or reaches a new destination requires a fresh decision by the accountable owner. Trust granted once must not be allowed to expand silently.
 - Human approval of an *action* is not mitigation for poisoned *metadata*, because the model consumed the metadata before the approval prompt was generated. Validate metadata before it reaches context.
 - Isolate tools from one another so that one tool cannot induce another into accessing or exporting unrelated data.
+- Record the approved tool definition hash in the AIBOM (§10.3). A definition change is an AIBOM regeneration trigger as well as a consent trigger (§10.5).
 
 > **Signatures and hashes establish artifact integrity and origin — not benign behavior.** Enforce declared permissions at runtime and audit actual tool behavior against the advertised capability. Require re-review whenever code, description, schema, permissions, owner, dependencies, or endpoint changes.
 
@@ -771,6 +772,8 @@ Statistical and model-based detectors (baselines, z-scores, distribution-shift t
 
 Procedures must support containment, credential revocation, evidence preservation, tenant notification, rollback, dependency quarantine, regulatory assessment, root-cause analysis, and controlled restoration. Rebuild compromised workloads from known-good images and rotate potentially exposed credentials from a clean environment. Exercise the plan before production and after material architectural changes.
 
+Incident scoping starts from the AIBOM revision in force at the earliest credible compromise indicator (§10.5), since that revision states what was running, on what data, and with what reach. Where no such revision exists, record the absence as an evidence gap.
+
 During forensic reconstruction, treat the agent-authored record stream as one input among several; reconcile it against the independently authored streams in §9.5 before drawing conclusions about events inside the compromise window.
 
 Exercise concrete compromise scenarios rather than reviewing the plan on paper: who is paged, which store holds the relevant logs, who is authorized to activate the kill switch, and how long disabling a specific tool server actually takes. Each of these is a question that cannot be answered quickly under pressure, so it must be answered beforehand.
@@ -809,17 +812,68 @@ Each identity and audit-integrity control closes a narrower failure mode than "s
 
 ## 10. Supply-Chain Security
 
-Maintain an AI and software bill of materials (AIBOM/SBOM) covering: models and versions; runtime and agent frameworks; model routing and gateway components; system and developer prompts; MCP servers and tools; source repositories and build provenance; packages, containers, and infrastructure modules; datasets, embeddings, and knowledge sources; licenses, owners, and support status; artifact hashes and signatures; and vulnerabilities, exceptions, and review dates.
+Maintain an AI and software bill of materials (AIBOM/SBOM) covering: models and versions; runtime and agent frameworks; model routing and gateway components; system and developer prompts; MCP servers and tools; source repositories and build provenance; packages, containers, and infrastructure modules; datasets, embeddings, and knowledge sources; licenses, owners, and support status; artifact hashes and signatures; and vulnerabilities, exceptions, and review dates. Extend the same inventory to adapters and checkpoints, evaluation datasets and results, guardrail and moderation services, agents and sub-agents, third-party connectors, and the registries or discovery endpoints through which capabilities are found.
 
 Verify provenance and signatures where available, pin production artifacts by digest, scan dependencies continuously, protect the build pipeline, and require review for material changes.
 
-Operational requirements that follow from this:
+An inventory is the minimum. The AIBOM is a governance artifact that someone other than its author reads later and under pressure, so it is structured as a graph with a declared scope rather than as a parts list. It records what the system contains and how information moves through it. It is not a score, a compliance assertion, or a control. It blocks nothing until a gate reads it (§10.5, §12).
+
+### 10.1 AIBOM Structure
+
+Every AIBOM carries four parts.
+
+- **Header.** Graph type (single model, dataset, runtime system, training pipeline, or a system extension such as a tool server). Scope (system, version, deployment, interfaces, and the components included and excluded). Completeness claim (complete for the declared scope, partial, or unknown). Generation method (build telemetry, configuration, runtime capture, or hand-authored). Document metadata records author, reviewer, approver, date, tooling, and validity period.
+- **Components.** Everything in the system is a component, services included. A code module, a dataset, a prompt, a guardrail, and a provider-hosted endpoint are distinguished by component type, not by separate lists. Membership in the described system is a scope-relative producer choice and is not the same as ownership. A third-party hosted model can be integral, and an internally operated database can be external. State the choice explicitly.
+- **Directed data flows.** One flow per material movement, with a request and its response recorded separately. Each flow declares its kind (data, control, event, message), payload, protocol, and encryption, with an inline payload descriptor where the payload at that stage differs from what the component generally emits. Flows answer what can reach what, which is the question §7.8 scores. A parts list cannot express the capability trifecta and the flow graph can. What the receiving component does with the data is described on the node, not on the flow.
+- **Evidence and provenance references.** Attached to individual components, flows, and header claims. Evidence is a hash, signature, attestation, evaluation result, model card, or license file. Provenance records how an artifact came to exist, such as the base model behind a fine-tune or the dataset snapshot behind a retrieval index. A claim with no evidence reference is a bare assertion, and consumers weight it as one.
+
+Two further parts are required wherever the system calls for them, which for agentic systems is always.
+
+- **Trust zones and boundaries.** Group components using the zones in §3.3 and mark each crossing. A boundary records what its crossings require, including authentication toward the far side, encryption in transit, and logging of what left. A flow that carries a payload to a provider is a different fact from the same payload moving between internal components, and the graph must say so without relying on the reader knowing which names are internal.
+- **Behaviors.** Conditional action expressed as trigger, permitted response, and consequence. An agent decides at runtime whether to call a tool or delegate. A bare flow either overstates that (the tool is invoked every time) or omits it.
+
+Additional structural requirements.
+
+- **Stable identifiers.** Every component, flow, zone, and boundary carries one. The threat model (§11), control evidence table (§14), residual-risk decisions (§2.3), and vulnerability analyses reference those identifiers rather than re-describing the system. A finding that cannot point at a node or a flow is not traceable.
+- **Hosted models.** Represent a hosted model as a service component bounded at the provider endpoint, referencing a model component that carries identity, version, license, and intended use. Do not assert facts about provider internals the producer cannot demonstrate. When a provider repoints an alias, the endpoint component stays, the model reference changes, and the next AIBOM revision records the delta.
+- **Training and fine-tuning produce two linked AIBOMs.** One has pipeline scope (base model, training and evaluation datasets, training environment, evaluation step, produced artifact, and the flows between them). One has artifact scope (the model's identity, lineage, dataset references, evaluation results, intended use, and license). Record both process lineage (base model, training code, hyperparameters, evaluation procedure) and data movement. A pipeline AIBOM that carries only one under-describes what happened.
+- **Credential references, never values.** Record authentication method, opaque handle, and granted scope. No secret enters the AIBOM (§4.5). Inventory prompts and system instructions as components by version and hash.
+- **Format.** Encode the AIBOM in an established machine-readable BOM format rather than a bespoke schema. Verify the format's current release and construct names before building tooling against them (§6.6).
+
+### 10.2 Completeness and Negative Inference
+
+- An absent entry means something only under a completeness claim. Without one, an unlisted dataset proves nothing. With one, the absence is a producer assertion that can be relied on and challenged.
+- A truthful partial claim is a correct artifact. A complete claim over a black-box SaaS feature is a false one. Record unknowns as unknowns, including undisclosed sub-processors, opaque processing steps, and provider internals.
+- Richness is not an assurance level. A minimal AIBOM that is complete for its scope is worth more than a richly populated incomplete one.
+- Confidence derives from completeness, provenance, evidence quality, and generation method. Identical claims generated from build telemetry and drafted by hand during procurement warrant different confidence, which is why the header records the method.
+
+### 10.3 Agentic Dependencies
+
+In agentic systems the dependency set is not fixed at design time, and three views of it diverge. Record all three and treat divergence as a finding.
+
+| View | Source | Divergence means |
+| --- | --- | --- |
+| Declared | Configuration, manifests, agent definitions | Baseline |
+| Reachable | Effective permissions, scopes, network policy | Reachable but never observed is scope to remove at recertification (§4.2) |
+| Observed | Broker decision records (§5.2), platform telemetry (§9.3), tool-side logs | Observed but not declared is a shadow dependency (§4.6) |
+
+Populate the observed view only from streams the agent runtime cannot author (§9.5). An agent's own account of its dependencies is not evidence of them. Keep time-bound records of which agent talked to which endpoint, when, and over which protocol.
+
+Record per agent the identity and role (planner, executor, retriever, critic, router), the model with its fine-tunes and adapters, the interaction pattern (hierarchical, peer, event-driven, hub-and-spoke), and the orchestration edges stating who invokes whom, under what conditions, and with what escalation path. These edges are what make impact analysis possible when one node changes, since a compromised retrieval agent or misconfigured guardrail agent propagates through them.
+
+Record per tool the identity and function, invocation mechanism, access scope (read, write, admin, and the data and resources covered), authentication method and secret-handling reference, rate limits and quotas per agent and globally, and the definition version or hash the agent was approved to use. Approval binds to a definition version, not to a tool name (§6.4).
+
+Record per connector the vendor, product, region, and deployment model, the data categories and classification moving in each direction, the authorization model with the scopes actually granted compared against the scopes the use case needs, residency and sovereignty constraints, contractual and licensing constraints, and known transparency gaps.
+
+Registries, catalogs, marketplaces, and discovery endpoints are first-class components. Capability advertisements such as tool-server manifests and A2A Agent Cards are AIBOM inputs, and they remain untrusted until validated under §6.4.
+
+### 10.4 Artifact Controls
 
 - Pin every dependency, plugin, and tool server to a reviewed, known-good version. No `latest`, no floating ranges. Upgrade deliberately after review.
 - Do not fetch dependencies dynamically at runtime; build and deploy a fixed, vetted set.
 - Run dependency scanning in CI before release, not only on a periodic schedule.
 - Verify maintenance status before adoption and re-verify on schedule. Archived, unmaintained, and single-maintainer components carry a different risk profile than actively supported ones, and a widely used project is not necessarily a maintained one.
-- Track vulnerabilities as an inventory-linked process rather than a feed to read. Tie CVEs, vendor advisories, and upstream issue trackers to the specific server, plugin, and SDK versions in the registry, so a published advisory resolves to a named owner and a patch state rather than to a general awareness.
+- Track vulnerabilities as an inventory-linked process rather than a feed to read. Tie CVEs, vendor advisories, and upstream issue trackers to the specific server, plugin, and SDK versions in the registry, so a published advisory resolves to a named owner and a patch state rather than to a general awareness. Feed AIBOM component records into the same correlation workflow the SBOM programme uses rather than a second silo, so that a disclosure in a model, framework, or serialization format resolves to affected systems in hours.
 - Sandbox third-party plugins (§5.1) so that one compromised component does not compromise the environment.
 - Monitor and restrict plugin network access, particularly calls to unknown domains.
 - Include developer workstations in the inventory (§6.2).
@@ -827,10 +881,34 @@ Operational requirements that follow from this:
 - **A mirror cache is an integrity asset.** Verify digest and signature on every entry served, regardless of how the entry was populated. A trusted reference that resolves to attacker-controlled content inside the cache is a supply-chain injection with the mirror's credibility attached, and a cache that trusts its own contents is the mechanism by which that happens.
 - Credentials for mirrors, caches, and registries are per-agent, short-lived, and scoped to the artifacts the workload's declared task requires (§4.1, §4.3). A shared mirror credential converts a single compromised workload into write access to every consumer's dependency tree.
 - Mirror population is a change-managed action. New entries enter only through an authenticated upstream fetch by the mirror service under its own identity, with the approver, upstream source, digest, and signature verification result recorded. Workload identities cannot populate the mirror.
+- Treat internally produced artifacts (fine-tunes, labeled data, internal adapters) with the same provenance and integrity rigor as external ones. Internal pipelines are an unvetted-contribution path.
+
+### 10.5 Lifecycle, Gates, and Consumption
+
+- **Minimum usable AIBOM per classification tier.** Define in policy the required fields and completeness expectation for each §2.1 tier, together with authoring and review responsibilities, retention, update triggers, and the escalation path when a supplier will not disclose.
+- **Author close, review apart.** The team closest to the system authors. A designated security or governance function reviews and approves. Centralized authoring by a team without direct system knowledge produces records nobody can vouch for.
+- **Generate in the pipeline.** Emit the AIBOM on successful training or build, extracting each field from where it already exists (build and training pipelines, experiment tracking, dataset registries, dependency manifests). Name an owner for every field that must be hand-authored.
+- **Validate, sign, and store with the artifact.** Lint against the schema, confirm minimum-usable completeness, compute hashes, verify signatures, and check licenses. Sign the document so post-generation modification is detectable, store it in the artifact registry beside what it describes, and reference it from the release record.
+- **Gate on it.** A missing AIBOM, one incomplete for its tier, or a stale one blocks promotion (§12). Without a consuming gate the AIBOM is an engineering byproduct with a governance label.
+- **Regenerate on trigger.** Retraining or dataset refresh, including incremental dataset version changes. Adapter replacement or fine-tuning parameter change. Upstream model or alias change by a supplier. Dependency upgrade in the inference runtime or preprocessing path. Guardrail or policy-pack change. Tool definition, scope, or connector change (§6.4). A disclosed vulnerability affecting a tracked component. Any change to intended use, deployment scope, or access boundaries.
+- **Supplier-side triggers fire without a local release.** Detect them by diffing the resolved model identifier recorded per invocation (§7.7) against the AIBOM, and by tracking provider changelogs, deprecation notices, and sub-processor notices as an inventory-linked feed on the same terms as CVEs.
+- **A stale AIBOM is worse than none** because it invites confidence it cannot support. Measure the lag between a trigger event and the corresponding update.
+- **Controlled document.** Version-controlled and signed, with reviewer identity, review date, and review scope captured, held to the same retention and access controls as model validation records, and preserved when the system is decommissioned (§13). Incident response (§9.4) reads the revision in force at the time of the incident, so the retained history must support reconstructing the system as it stood on a given date.
+- **Protect it.** An AIBOM with flows, zones, and scopes is a reachability map of the estate. Access-control it, and deny agent workload identities any ability to write or modify it.
+- **Consumers.** Release gating (§12), threat modeling (§11), vendor assessment, incident scoping and retrospective review (§9.4), permission recertification (§4.2), and the trifecta scorecard (§7.8). One record serves security, compliance, and audit without being prepared three times.
+- **Programme metrics.** Coverage (share of production AI systems with a current AIBOM). Freshness (trigger-to-update lag). Field population against the minimum usable AIBOM by tier. Time from vulnerability disclosure to assessed impact. Share of contracted AI suppliers meeting the minimum disclosure standard. These measure the programme and not the systems it documents, and none of them is a security coverage claim under §14.
+
+### 10.6 Supplier Disclosure
+
+- Require an AIBOM or an equivalent attestation from suppliers at the tier the use case demands, and write the minimum disclosure standard into procurement and third-party risk review.
+- Where a supplier will not disclose, record the gap, the assumed trust boundary, and the residual risk with a named owner (§2.3). Non-disclosure does not exempt the system from having an AIBOM. It produces a partial one with a truthful completeness claim.
+- AI features embedded in procured SaaS set the floor of achievable coverage. They still receive an AIBOM, and approval of the platform does not reduce what it must state (§2.1).
+- Connector authorization granted at setup is routinely broader than the use case. Record granted scopes against required scopes and treat the difference as a finding (§4.2).
+- Contract for notice of changes to API behavior, data handling, model versions, and sub-processors, and treat each notice as a regeneration trigger. Where residency or sovereignty rules apply, the AIBOM is the audit trail showing where training data and model components sit.
 
 > Signatures establish origin and integrity, **not** safety; runtime isolation and authorization remain mandatory. When recording AIBOM entries, verify each component's real package ecosystem, version scheme, and identifiers rather than assuming them.
 
-A supply-chain risk score (known CVEs, maintainer activity, version age, open security issues) can gate adoption into `approve`, `review-required`, or `reject`, with heavier runtime controls for higher scores.
+A supply-chain risk score (known CVEs, maintainer activity, version age, open security issues) can gate adoption into `approve`, `review-required`, or `reject`, with heavier runtime controls for higher scores. The score lives in the adoption process and not in the AIBOM, which stays a record of fact that any scoring regime can read.
 
 ---
 
@@ -878,6 +956,9 @@ Validation must also include **control-environment attack**: the assumption that
 - A task declared unsatisfiable within its granted scopes is refused at session start rather than run to failure.
 - A compaction preserves an out-of-scope determination and a refusal made before it; a compacted summary that promotes an open question into settled fact is a failure.
 - Reasoning traces are absent from every training and fine-tuning dataset, verified by configuration inspection and by search of the assembled corpus.
+- A release with a missing AIBOM, one incomplete for its tier, or a stale one is blocked at promotion (§10.5).
+- A simulated supplier alias repoint is detected through the resolved model identifier (§7.7) and raises an AIBOM regeneration trigger.
+- A workload-identity attempt to write or modify the AIBOM is denied.
 
 **Control-environment attack cases.** Run these against the enforcement point itself, not against the agent:
 
@@ -900,6 +981,7 @@ Validation must also include **control-environment attack**: the assumption that
 - Determine, for each production agent, whether its tool servers are vendor-built or drawn from an unreviewed repository (§10).
 - Enumerate every outbound path from agent workloads, including load balancers, private links, peering, VPN enrollments, and shared services with their own egress, and compare against the approved allowlist. Any path not on the list is a finding, and any path a workload identity could have created is a critical finding (§3.3).
 - Search public code hosts, model hubs, package registries, and paste services for tokens attributable to the organization (§4.5). Revoke every match.
+- For two or three production agents, answer from records alone which model version is running, what it was trained or fine-tuned on, who the upstream supplier is, and what the license permits (§10). Every unanswerable question is a finding.
 
 Measure detection rate, false-positive rate, unsafe-action completion rate, correct-escalation rate, containment time, and recovery time. **Test complete sessions and realistic action sequences, not only isolated prompts.** Red teaming should be conducted by an independent team whose test design the agent cannot influence.
 
@@ -909,7 +991,7 @@ Measure detection rate, false-positive rate, unsafe-action completion rate, corr
 
 An agent must not enter or remain in production with an unresolved **critical** vulnerability or an unaccepted **high-severity** vulnerability affecting authorization, isolation, data protection, or privileged tool use.
 
-Production approval requires: documented remediation and regression testing; representative adversarial testing; verified policy enforcement and emergency controls; operational monitoring and response readiness; privacy and legal review where applicable; documented residual risk and a named risk owner; time-bounded, approved exceptions where policy permits; and security and business-owner sign-off.
+Production approval requires: documented remediation and regression testing; representative adversarial testing; verified policy enforcement and emergency controls; a current AIBOM meeting the minimum for the system's classification tier (§10.5); operational monitoring and response readiness; privacy and legal review where applicable; documented residual risk and a named risk owner; time-bounded, approved exceptions where policy permits; and security and business-owner sign-off.
 
 Example blocking decision:
 
@@ -927,7 +1009,7 @@ Advancement is **evidence-based, not time-based**. A fixed number of operating h
 
 **Phase 3 — Limited Production:** defined user cohort and use cases; bounded tools, destinations, and data; enhanced monitoring and daily review; tested rollback and kill switch; explicit go/no-go criteria.
 
-**Phase 4 — General Production:** scale only within validated boundaries; continuous control evidence and testing; periodic access and tool recertification; change-triggered reassessment; documented decommissioning and data-deletion plan.
+**Phase 4 — General Production:** scale only within validated boundaries; continuous control evidence and testing; periodic access and tool recertification; change-triggered reassessment; documented decommissioning and data-deletion plan, with the AIBOM revision history preserved after retirement (§10.5).
 
 Each transition requires security, operations, product, and compliance sign-off plus a tested rollback plan.
 
@@ -956,6 +1038,8 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Inventory | Mandatory registration and shadow discovery | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Network containment | Dual-layer egress with boundary self-modification denied | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Supply chain | Internal mirrors with cache integrity verification | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Supply chain | AIBOM currency gate at promotion                   | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Supply chain | Declared, reachable, and observed dependency reconciliation | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Platform visibility | IAM, network-path, and control-plane telemetry baseline | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Containment | Class-scoped evaluation shutdown | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Persistence prevention | Publication to run-readable locations gated | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
@@ -1022,6 +1106,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - A current trifecta scorecard for every production agent, with at least one leg constrained wherever feasible (§7.8)
 - Independent dual-layer egress enforcement with workload-identity denial of outbound-path creation (§3.3)
 - Internal mirrors for every package and image dependency, with no direct public-registry reach (§10)
+- A current AIBOM with declared scope and a truthful completeness claim, required at the production gate (§10.5, §12)
 - Model routing layer isolated as its own trust zone with per-tenant credentials, where one is deployed (§3.3)
 - Broker availability engineering with outage treated as an incident (§5.2, §9.4)
 - Enforcement coverage across memory, retrieval, compaction, and delegation (§5.2)
@@ -1071,6 +1156,9 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Eradication runbook covering accessed credentials, caches, model weights, and external channels (§9.4)
 - Retrospective run review capability (§9.4)
 - Mirror population governance with recorded approval and verification (§10)
+- Pipeline-generated, signed AIBOMs with trigger-based regeneration and supplier-side change detection (§10.5)
+- Declared, reachable, and observed dependency views reconciled per agent (§10.3)
+- Minimum supplier disclosure standard in procurement, with recorded gaps and a named owner (§10.6)
 - Secure-by-default deployment templates that make the compliant path the fast path (§4.6)
 - Cumulative permission review and recertification (§4.2)
 - Complete control evidence and recertification
@@ -1082,6 +1170,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Stronger workload isolation for higher-risk use cases
 - Configuration naming convergence to a single canonical scheme (§6.7)
 - Independent assurance and regulatory-mapping updates
+- AIBOM programme metrics covering coverage, freshness, and supplier compliance (§10.5)
 - Environmental and operational efficiency monitoring
 
 ---
@@ -1089,7 +1178,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 ## 17. Glossary
 
 - **Agent:** An AI-enabled system that can plan or select actions and invoke tools.
-- **AIBOM:** Inventory of models, data, prompts, tools, and supporting software used by an AI system.
+- **AIBOM:** A scoped, machine-readable record of an AI system comprising a header, components and services, directed data flows, and evidence references; a record of fact, not a score or a compliance assertion (§10).
 - **Cache poisoning (artifact):** Substitution of attacker-controlled content for a trusted reference inside a mirror or cache, so that consumers receive malicious content with the mirror's credibility attached (§10).
 - **Cached fetch service:** A controlled intermediary that retrieves external content on behalf of workloads that have no direct internet reach, applying the organization's allowlist, logging, and DLP controls; granted per workflow on review (§3.3).
 - **Capability declaration:** A runtime's statement at session start of what it can supply to the broker (provenance labels, correlation identifiers, signed envelopes); a session is refused when the declaration falls short of policy (§5.2).
@@ -1098,6 +1187,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Confused deputy:** A component with legitimate authority induced to exercise it on behalf of a caller that lacks that authority; in agentic systems, most often via token passthrough (§6.3).
 - **Control-environment attack:** An adversary, including the model under evaluation, targeting the enforcement broker, network boundary, registry, or evidence substrate rather than the guardrails they host (§11).
 - **Correlation identifier:** A validated, generated-if-absent identifier propagated across services that joins the model-facing error, client response, operational log, and audit record for a single event.
+- **Completeness claim:** The AIBOM producer's statement of how fully the document covers its declared scope; the precondition for drawing any conclusion from an absent entry (§10.2).
 - **Compaction:** Summarization of prior context to fit a context window; a decision-eligible event that must preserve provenance labels and security determinations rather than only conclusions (§7.1, §5.2).
 - **Cross-run collective:** Independent agent runs that share capabilities, credentials, or data through external channels and thereby persist beyond any single session (§9.3, §9.4).
 - **Cross-stream corroboration:** Reconciling the agent-authored audit stream against independently authored record streams (broker decisions, KMS/CSP logs, tool-side logs, network telemetry) that the agent runtime cannot write; the required control for reconstructing events during a live compromise.
@@ -1114,6 +1204,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Internal mirror:** The organization-operated registry through which every dependency, image, and model artifact is resolved; the single validation and egress point for third-party artifacts (§10).
 - **JIT:** Just-in-time issuance of short-lived, scoped credentials.
 - **MAESTRO:** CSA's seven-layer agentic AI threat-modeling framework.
+- **Minimum usable AIBOM:** The fields and completeness expectation policy requires for a given classification tier before an AIBOM can satisfy a gate (§10.5).
 - **MCP:** Model Context Protocol; exposes context and tools to compatible clients.
 - **mTLS:** Mutual TLS; bidirectional certificate authentication.
 - **Model routing layer:** A gateway component that selects among providers or models, holds their credentials, and mediates every prompt and response; a trust zone and policy-enforcement point in its own right (§3.3).
@@ -1147,6 +1238,7 @@ Maintain dated references to the authoritative versions the organization actuall
 - OpenID Connect Core (ID token validation, for principal assertion binding)
 - CSA MAESTRO and MITRE ATLAS threat-modeling sources
 - OWASP Top 10 for LLM Applications and OWASP agentic security guidance
+- OWASP AIBOM Foundations Guide v1.0 (September 2026, CC BY-SA 4.0), and the current release of whichever BOM format the organization encodes AIBOMs in
 - Current MCP protocol and authorization specifications
 - NSA, Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation (U/OO/6030316-26, May 2026)
 - OWASP Agent Control Standard (ACS), as a candidate runtime-control interface under the §6.6 evaluation rule; any adoption sets fail-closed postures, uses the Crypto and Audit profiles, and constrains the Guardian agent layer to narrowing only
@@ -1166,10 +1258,11 @@ Secure agentic AI requires independently enforced controls **around** the model.
 
 ## Version History
 
-**Version:** Consolidated 2.8
+**Version:** Consolidated 2.9
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
 
-**Changes from 2.7:** task-shape bounds covering recursion depth, chain length, fan-out, compute budget, and backpressure (§5.2); idempotency keys on consequential operations (§5.2); renewed consent on server capability or data-access change (§6.4); maintenance-status verification and inventory-linked CVE tracking (§10); differential discovery scanning (§4.6); three new regression tests (§11); four new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for idempotency key and differential discovery (§17). Sourced from the MCP Security Best Practices consolidation and NSA, Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation, U/OO/6030316-26, May 2026.
+**Changes from 2.8:** AIBOM restructured from inventory to scoped graph per the OWASP AIBOM Foundations Guide v1.0, with §10 divided into §10.1 through §10.6; header self-descriptions and completeness claim (§10.1, §10.2); directed flows with zones, behaviors, per-claim evidence, and stable identifiers referenced by the threat model and evidence table (§10.1); declared, reachable, and observed dependency views (§10.3); pipeline generation, regeneration triggers, supplier-side change detection, and the promotion gate on AIBOM currency (§10.5, §12); supplier disclosure requirements (§10.6); AIBOM revision as the starting point for incident scoping (§9.4); tool definition hash recorded in the AIBOM (§6.4); three new regression tests and one verification probe (§11); AIBOM preservation at decommissioning (§13).
+**Changes from 2.7 (delivered in 2.8):** task-shape bounds covering recursion depth, chain length, fan-out, compute budget, and backpressure (§5.2); idempotency keys on consequential operations (§5.2); renewed consent on server capability or data-access change (§6.4); maintenance-status verification and inventory-linked CVE tracking (§10); differential discovery scanning (§4.6); three new regression tests (§11); four new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for idempotency key and differential discovery (§17). Sourced from the MCP Security Best Practices consolidation and NSA, Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation, U/OO/6030316-26, May 2026.
 **Changes from 2.6 (delivered in 2.7):** task feasibility confirmed before session start and non-progress as a signal (§5.2, §9.3); explicit scope-setting instructions phrased as rules rather than environmental claims (§7.8); compaction preserves security determinations and is retained for retrospective review (§7.1, §9.4); reasoning traces excluded from training and fine-tuning data (§9.2); guardrail verdicts kept out of any reward or selection surface (§7.8); auxiliary-model anomalies, approver overrides of detections, and repeated non-progress added as monitoring signals (§9.3); adversarial pre-validation using the model under test, limits of behavioral audits, and six control-environment attack cases (§11); three new regression tests (§11); seven new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for compaction, evaluation awareness, and monitor-as-target (§17); reference additions (§18). Sources for this revision include the UK AI Security Institute incident report INC-2026-07-28-01 (4 August 2026), Anthropic's cybersecurity-evaluation incident disclosures (30 July 2026) and alignment and security follow-up (31 August 2026), and published reward-hacking generalization research.
 **Changes from 2.5 (delivered in 2.6):** broker scope extended to memory, retrieval, compaction, delegation, and registration actions (§5.2); session-start capability declaration and refusal (§5.2); runtime-to-broker replay protection (§5.2); DEFER disposition (§5.2); broker availability requirement with outage treated as an incident (§5.2, §9.4); approver-only intent extension with audit entry (§7.8, §9.1); five new regression tests (§11); three new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for capability declaration and DEFER (§17); ACS added as a candidate reference (§18).
 **Changes from 2.4 (delivered in 2.5):** approval status does not reduce classification (§2.1); research-workload exemption conditions (§2.1, §7.6); model routing layer named as a trust zone and AIBOM entry (§3.3, §10); cached fetch service scoped as a transitive path and trifecta leg (§3.3, §7.8); secret-scanning partner enrollment as primary sweep mechanism (§4.5); per-task volume budgets enforced at the broker (§5.2); publication to run-readable locations gated as a consequential action (§5.2, §7.5, §9.3); class-scoped stop dependencies on registry and out-of-band control (§5.3); deterministic escalation for dependency timeouts (§6.5.3); aggregate-aware output classification (§7.5); insider-model trifecta case (§7.8); principal-binding assurance limit consolidated into §9.5 (§9.1); reasoning-trace retention for all workloads where available, with fidelity recording and legal review (§9.2, §16); broker-compromise residual (§9.5); mirror population governance (§10); new coverage rows (§14); Priority 1 split into unconditional and classification-triggered (§16); glossary additions (§17); numbering note corrected; version history moved to the end of the document.
@@ -1177,4 +1270,4 @@ Secure agentic AI requires independently enforced controls **around** the model.
 **Changes from 2.2 (delivered in 2.3):** sixth governing principle on capability combinations; trifecta added to system classification (§2.1); server-side authorization decisions, OAuth 2.1, and resource-indicator token binding (§4.3); server registration and shadow discovery (§4.6); per-server kill switch (§5.3); OAuth client/authorization-server role separation (§6.3); infrastructure-enforced tenant isolation and ingestion-time classification (§7.4); intent integrity and the capability trifecta (§7.8); log-store minimization and retention (§9.1); SIEM/XDR integration and three new monitoring signals (§9.3); compromise-scenario drills (§9.4); tenant-isolation and telemetry tests plus verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
 **Changes from 2.1 (delivered in 2.2):** secret custody and model-context exclusion, and untrusted project configuration (§4.5); local-transport binding and origin validation (§6.2); full-schema metadata scanning, display-control stripping, and TOFU pinning (§6.4); error design (§6.5); service surface hardening baseline (§6.7); safe command and process execution (§7.6); model invocation guardrails (§7.7).
 
-**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.8 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
+**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.9 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
