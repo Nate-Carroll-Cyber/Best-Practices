@@ -159,7 +159,7 @@ Certificate-bound tokens for high-risk clients
 
 ## Related
 
-- [Implementing mTLS at the Gateway](mtls-at-the-gateway.md)
+- [Implementing mTLS at the Gateway](implementing-mtls-at-the-gateway.md).
 - [Token Security (certificate-bound tokens, RFC 8705)](token-security-guide.md)
 
 See [References](references.md) for the full citation registry.
