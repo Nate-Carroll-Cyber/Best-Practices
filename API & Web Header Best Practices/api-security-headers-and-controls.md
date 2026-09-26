@@ -1,4 +1,4 @@
- API Security Headers & Controls
+# API Security Headers & Controls
 
 For an **API**, use web headers plus API-specific controls. Some browser headers still matter, but API risk is more about **authn/authz, object-level authorization, rate limiting, schema validation, and token handling**.
 
@@ -80,6 +80,12 @@ OWASP recommends CSRF tokens, custom request headers, and origin/referer validat
 10. **Logging and detection.**
     Log authentication failures, authorization denials, object ID tampering, rate-limit hits, suspicious query patterns, token failures, and admin actions. Avoid logging tokens or secrets.
 
+11. **Management endpoint isolation.**
+    Health, metrics, admin, debug, and actuator endpoints are the easiest route past every control above, because they are usually deployed with the API and forgotten. OWASP's REST guidance says to avoid exposing them to the Internet at all, and where that is unavoidable, to require strong authentication such as multi-factor. Serve them on a separate port or host, preferably a separate interface on a restricted subnet, and restrict reach with firewall rules or ACLs. (OWASP Cheat Sheet Series) Treat framework defaults as exposed until proven otherwise. Spring Actuator, Express debug routes, and GraphQL playgrounds all ship enabled, and API9:2023 inventory work is where they surface.
+
+12. **Authorization decision placement across services.**
+    A gateway check is coarse, so each service still needs its own fine-grained decision, and where that decision runs is a design choice. OWASP's Microservices guidance describes three patterns. Decentralized, where each service hardcodes its own policy and every change means a code change. Centralized with a single remote policy decision point, which is consistent but adds a network call to every request. Centralized with an embedded decision point, where policy is authored centrally and evaluated locally in each service from in-memory state, which is the pattern OWASP notes Netflix runs in production. Whichever pattern is chosen, express policy in a policy language rather than application code, give a platform team ownership of the authorization solution, and enforce at gateway, service library, and business logic layers in depth. At the edge, exchange the external token for an internal identity representation signed by a trusted issuer, and propagate that downstream instead of the external token, so an accidentally exposed internal service cannot be reached with a customer's credential. (OWASP Cheat Sheet Series) RFC 8693 token exchange is a standard way to mint that internal representation. See Token Security.
+    
 Also on the 2023 list and worth a design pass: **server-side request forgery** (API7:2023 — validate and allowlist any user-supplied URL the API fetches) and **unsafe consumption of third-party APIs** (API10:2023 — validate upstream responses instead of trusting them).
 
 ## Practical API checklist
@@ -99,6 +105,14 @@ No sensitive caching
 No secrets in logs
 Centralized audit logging
 API inventory and ownership
+Every HTTP method on every route, including ones the spec omits
+  (an undocumented PUT or DELETE handler is a common authz gap)
+Method override headers (X-HTTP-Method-Override) and tunneled verbs
+Parameters in every location, not only query strings:
+  URL path segments, headers, cookies, JSON and form bodies, multipart parts
+Every API version still routable, not only the current one
+Token validation and revocation behaviour, automated:
+  expired, wrong audience, wrong type, revoked jti, alg confusion
 ```
 
 For an API, the most important distinction is this: **headers help, but authorization logic is the control that usually matters most.** OWASP's 2023 API Top 10 puts Broken Object Level Authorization first for exactly that reason. ([OWASP Foundation][3])
@@ -108,7 +122,8 @@ For an API, the most important distinction is this: **headers help, but authoriz
 [3]: https://owasp.org/API-Security/editions/2023/en/0x11-t10/ "OWASP Top 10 API Security Risks – 2023"
 [4]: https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/ "API2:2023 Broken Authentication"
 [5]: https://owasp.org/API-Security/editions/2023/en/0xa9-improper-inventory-management/ "API9:2023 Improper Inventory Management"
-
+[6]: https://cheatsheetseries.owasp.org/cheatsheets/REST_Security_Cheat_Sheet.html "REST Security Cheat Sheet"
+[7]: https://cheatsheetseries.owasp.org/cheatsheets/Microservices_Security_Cheat_Sheet.html "Microservices Security Cheat Sheet"
 ---
 
 ## Related
