@@ -1,6 +1,6 @@
 # MCP Security Best Practices
 
-This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category.
+This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements.
 
 ## Core Principles
 
@@ -16,6 +16,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 10. **Break the lethal trifecta.** For every agent, determine whether it can access private data, ingest untrusted content, and communicate externally. Remove at least one leg wherever possible.
 11. **Protect availability.** Bound task complexity, recursion, and resource consumption; rate-limit and quota agent workloads so exhaustion techniques cannot stall the system. **(NSA CSI)**
 12. **Bind messages to time and context.** Sign sensitive MCP messages, include expiry and replay protection, and require idempotent handling of re-delivered requests. **(NSA CSI)**
+13. **Make consequential actions previewable and reversible.** Every other control can fail. A preview stage before commit and a rollback path after it bound the damage when one does. **(CoSAI)**
 
 ## MCP01 — Token Mismanagement and Secret Exposure
 
@@ -67,7 +68,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Enforce freezes, approval requirements, and other critical controls as hard authorization boundaries—not prompt instructions.
 - Remove write and delete capabilities unless they are strictly required.
 - Align tools and models with data classification zones: group public tools for public datasets; explicitly control and segregate tools that interact with sensitive or regulated data. **(NSA CSI)**
-- Prefer locally deployed MCP server instances when processing private data. **(NSA CSI)**
+- Prefer locally deployed MCP server instances when processing private data that the organization controls. Where the data already lives with a service provider in a multi-tenant deployment, prefer the server that provider hosts directly over a third-party intermediary, since the intermediary adds a party to the data path without reducing the provider's access. See Deployment Pattern Requirements. **(NSA CSI, CoSAI)**
 
 ### Detection and review
 
@@ -102,6 +103,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Re-prompt for informed user consent whenever a connected server’s capabilities or data access change; never let an already-trusted server expand silently. **(NSA CSI)**
 - Do not assume a user approval step is sufficient if the model has already consumed untrusted tool metadata; validate metadata before it reaches the model.
 - Isolate tools so one tool cannot silently manipulate another tool into accessing or exporting unrelated private data.
+- Design each tool for a single purpose with explicit boundaries. A "do anything" tool cannot be scoped, allowlisted, or reasoned about, and its schema is the largest possible poisoning surface. **(CoSAI)**
 
 ### Detection and review
 
@@ -112,6 +114,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Find tools that lack provenance or version binding.
 - Alert whenever the MCP tool list or any tool definition changes.
 - Treat a tool rewriting its own definition as a security signal.
+- Find tools whose description or parameter set spans several unrelated capabilities. **(CoSAI)**
 
 ### Immediate action
 
@@ -121,7 +124,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 
 ### Preventive controls
 
-- Require signed components with verifiable provenance; do not run components whose authenticity or origin cannot be established.
+- Require signed components with verifiable provenance; do not run components whose authenticity or origin cannot be established. Verify the signature in the MCP client before the server is loaded, not after it is already serving tools. **(CoSAI)**
 - Maintain a complete software bill of materials (SBOM) for every MCP server and plugin.
 - Pin every dependency, plugin, and MCP server to a reviewed, known-good version; do not use `latest` or other floating versions.
 - Upgrade deliberately only after review.
@@ -134,6 +137,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Inventory MCP servers running on developer machines.
 - Bind local development servers and tools to `127.0.0.1`/localhost rather than `0.0.0.0` or all network interfaces.
 - Require authentication and origin checks for local web interfaces and reject unauthorized cross-origin requests.
+- Use `stdio` transport for local servers. A pipe has no network listener, which removes DNS rebinding and cross-origin attacks against the local server entirely. Reserve HTTP streaming transport for servers that must be reached remotely, and apply the remote transport controls under Deployment Pattern Requirements. **(CoSAI)**
 
 ### Detection and review
 
@@ -143,6 +147,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Find dependencies using `latest`, ranges, or other floating versions.
 - Monitor plugins for connections to unknown or unapproved domains.
 - Check local MCP servers for unauthenticated interfaces, permissive origin handling, and network-wide binding.
+- Find local servers exposed over HTTP where `stdio` would serve. **(CoSAI)**
 - Operate a formal process for tracking MCP-related CVEs, vendor advisories, and open-source issue trackers, tied to the server inventory and patch history. **(NSA CSI)**
 
 ### Immediate action
@@ -161,6 +166,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Do not automatically execute model-generated code. Add an explicit validation and authorization gate.
 - Validate and constrain file paths to prevent traversal (for example, `../`) and access outside approved directories.
 - Parameterize SQL queries; never interpolate values into SQL strings.
+- Apply context-aware output encoding for every sink a tool writes to, including HTML and other markup rendered to a user or another agent, not only SQL and shell. **(CoSAI)**
 - Allowlist permitted commands, verbs, and operations so destructive or unexpected actions cannot run.
 - Enforce strict schema validation on all deserialized context, configuration, and payload objects; maintain hard isolation between code and data during deserialization (classic insecure-deserialization risk applied to MCP’s serialized context). **(NSA CSI)**
 - Block or restrict parameter forwarding when the origin of the data is ambiguous or potentially user-supplied, so inputs intended for one component cannot be reused by another. **(NSA CSI)**
@@ -194,7 +200,10 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Keep trusted system instructions structurally separate from retrieved content; do not merge them into an undifferentiated prompt.
 - Validate that every planned or requested action remains aligned with the user’s original intent.
 - Add a gate between planning and consequential actions so the agent cannot move directly from reading context to deleting, sending, modifying, or exporting.
-- Use an independent guardrail model or control outside the primary agent’s context to detect intent drift and mismatched actions.
+- Use a two-stage commit for high-impact actions. The first stage produces a draft or preview with a draft ID and no side effects. The second stage commits only on explicit confirmation of that specific draft. Where the target supports it, bind the commit to a time window so a stale confirmation cannot execute a changed action. **(CoSAI)**
+- Provide a rollback or undo path for every consequential tool, using snapshots, reversible operations, or retained drafts. A tool with no undo should carry the highest gate. **(CoSAI)**
+- Use an independent guardrail model or control outside the primary agent’s context to detect intent drift and mismatched actions. The guardrail advises. It never authorizes. Authorization decisions rest on deterministic policy and verified identity, never on the judgment of any model, primary or guardrail. **(CoSAI)**
+- Do not rely solely on human approval for safety. Approvers fatigue and start confirming by habit. Pair confirmation prompts with hard authorization boundaries, keep the prompt rate low enough that each one gets read, and make security-relevant prompts state the consequence plainly. Where the server can request confirmation itself through MCP elicitation, do so from the server, so the check does not depend on the client's implementation. **(CoSAI)**
 - Re-anchor the original intent during long-running sessions and multi-step workflows.
 - Treat context preconditioning as an attack vector: probabilistic interpretation of prior context means an actor can seed context history to steer the agent toward a specific unsafe outcome; constrain how much prior context can influence consequential decisions. **(NSA CSI)**
 - Inspect and filter each tool’s output before passing it to the next component in a chained pipeline — content length checks, disallowed-keyword scanning, and detection of injected prompts or code elements that could alter downstream behavior. **(NSA CSI)**
@@ -206,6 +215,8 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Find workflows with no intent-alignment validation.
 - Identify agents that can treat retrieved text as instructions.
 - Identify “blind planning” paths that execute immediately after retrieving context.
+- Find high-impact tools that execute in a single call with no preview stage, and consequential tools with no rollback path. **(CoSAI)**
+- Find approval flows that fire often enough that approvers no longer read them. **(CoSAI)**
 - Find prompts that merge system instructions and untrusted context without clear boundaries.
 - Test long-running sessions for gradual intent drift.
 - Test identical prompts under varied context histories for divergent, unsafe interpretations — non-deterministic behavior across deployments is itself an exploitable gap. **(NSA CSI)**
@@ -225,7 +236,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 
 - Treat MCP as an API and apply established API-security controls to every request.
 - Use OAuth 2.1 with short-lived, session-scoped tokens and per-user delegation.
-- Require mutual authentication between clients, agents, tools, and servers; use mTLS where appropriate.
+- Require mutual authentication between clients, agents, tools, and servers; use mTLS where appropriate. For workload-to-workload identity, a SPIFFE/SPIRE deployment issues and rotates the short-lived cryptographic identities (SVIDs) that mutual authentication needs, without long-lived certificates in configuration. **(CoSAI)**
 - Validate every token server-side, on every request, for authenticity, validity, expiry, intended resource, and authorization for the specific action.
 - Make authorization decisions server-side from verified facts, never from client-supplied identity, roles, or scopes.
 - Enforce scope checks for every tool and resource request.
@@ -329,6 +340,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Avoid shared singleton state, shared context buffers, or shared vector stores unless isolation is explicitly enforced and tested.
 - Classify and tag sensitive data as it enters context.
 - Apply policy at ingestion to block, mask, minimize, or restrict sensitive content before it is stored.
+- Minimize what a tool returns into context. Return only the fields the task needs, and redact PII and other sensitive values in the tool before the result reaches the model. What never enters context cannot be leaked, logged, or summarized onward. **(CoSAI)**
 - Give every context item a time-to-live and enforce automatic purging.
 - Treat persistent context as a governed data store with access controls, classification, retention, and deletion requirements.
 - Prevent injected content in shared memory from becoming instructions in later sessions.
@@ -340,6 +352,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Check whether context persists across users or sessions.
 - Find reused context or server-side state whose ownership is not revalidated on every request.
 - Identify sensitive data that enters context without classification or tags.
+- Find tools that return whole records, full rows, or raw API responses where a named subset of fields would serve. **(CoSAI)**
 - Find context with no TTL, expiry, or automatic purge.
 - Test timing- and concurrency-dependent cross-tenant leakage conditions.
 
@@ -368,6 +381,30 @@ This guide consolidates the actionable security practices in the supplied text. 
 
 - Set hard rate limits, timeouts, and recursion caps on every MCP server, then verify that a deliberately runaway task is contained rather than serviced.
 
+## Deployment Pattern Requirements **(CoSAI)**
+
+The controls above apply to every deployment. Several of them are conditional on how the server is reached and who shares it. This section states which controls become mandatory under each pattern, so a reviewer can tell whether a control is missing or simply not applicable.
+
+### All-local (one host, one user)
+
+- Security rests on the posture of the host. A compromised host means a compromised server, and no MCP control changes that.
+- Use `stdio` transport. It removes the network listener and with it DNS rebinding and cross-origin attacks (MCP04).
+- Sandbox the server and run it as non-root so a poisoned tool cannot escalate on the host (MCP05).
+- Appropriate for development and personal use. Not appropriate for anything that handles another person's data.
+
+### Single-tenant remote (one organization, reached over the network)
+
+- Authentication between client and server is mandatory, not optional, and all traffic is encrypted (MCP07).
+- Store client credentials in secure storage such as the OS keychain or a secrets manager, never in configuration files (MCP01).
+- Enterprise clients enforce authenticated server discovery against an explicit allowlist. A server absent from the allowlist is unreachable, not merely unapproved (MCP09).
+- HTTP streaming transport carries the full remote control set. Payload size limits and recursive-payload rejection, rate limiting on tool calls and transport requests, client and server authentication, mutual TLS, CORS protection, CSRF protection, and integrity checks against replay, spoofing, and poisoned responses (MCP07, MCP11).
+
+### Multi-tenant remote (several organizations share the server)
+
+- Everything in single-tenant remote, plus infrastructure-enforced tenant isolation with per-tenant encryption and role-based access control tested in CI (MCP10).
+- Prefer the server hosted directly by the service provider that already holds the tenant data. A third-party intermediary adds a party to the data path without reducing the provider's access (MCP02).
+- Provide remote attestation where the platform supports it, so a client can verify that the server is running the expected code before trusting it. Treat this as a target state rather than a baseline, since attestation support across MCP hosting is uneven.
+
 ## Consolidated Security Review Checklist
 
 ### Secrets and identity
@@ -391,11 +428,13 @@ This guide consolidates the actionable security practices in the supplied text. 
 ### Tools and schemas
 
 - [ ] Schemas and manifests are signed, pinned, version-bound, and traceable to known provenance.
+- [ ] Signatures are verified in the client before a server is loaded. **(CoSAI)**
 - [ ] Full schema content—including parameters and defaults—is scanned before model exposure.
 - [ ] ANSI/display-control characters are stripped during review.
 - [ ] Schema registries enforce RBAC and reviewed promotion.
 - [ ] Tool-list and runtime schema changes trigger alerts.
 - [ ] Capability or data-access changes on a connected server trigger renewed user consent. **(NSA CSI)**
+- [ ] Every tool is single-purpose with explicit boundaries. **(CoSAI)**
 
 ### Supply chain and networking
 
@@ -407,6 +446,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - [ ] Outbound traffic flows through a filtering egress proxy or DLP pinned to approved resource URLs and methods. **(NSA CSI)**
 - [ ] Maintenance status is verified; archived/unmaintained servers are not adopted, and MCP CVEs are formally tracked. **(NSA CSI)**
 - [ ] Local services bind only to localhost and enforce authentication and origin checks.
+- [ ] Local servers use `stdio`; remote servers carry the full HTTP transport control set. **(CoSAI)**
 
 ### Execution safety
 
@@ -416,6 +456,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - [ ] Generated code is not executed without validation and authorization.
 - [ ] File paths are normalized and constrained to approved roots.
 - [ ] SQL queries are parameterized.
+- [ ] Output encoding is context-aware for every sink, including HTML. **(CoSAI)**
 - [ ] Commands and operations are allowlisted.
 - [ ] Deserialization is schema-validated with hard code/data isolation. **(NSA CSI)**
 - [ ] Tool execution is confined by OS-level sandboxing (seccomp, AppArmor, SELinux, AppContainers). **(NSA CSI)**
@@ -427,7 +468,10 @@ This guide consolidates the actionable security practices in the supplied text. 
 - [ ] Retrieved content is explicitly marked and handled as untrusted data.
 - [ ] System instructions and retrieved content remain structurally separate.
 - [ ] Consequential actions require an intent-alignment check.
-- [ ] An independent guardrail detects intent drift.
+- [ ] High-impact actions use a two-stage commit with a preview and a bound confirmation. **(CoSAI)**
+- [ ] Every consequential tool has a rollback or undo path. **(CoSAI)**
+- [ ] An independent guardrail detects intent drift and never authorizes. **(CoSAI)**
+- [ ] Human approval is paired with hard boundaries and kept at a rate approvers actually read. **(CoSAI)**
 - [ ] Chained tool outputs are inspected before reaching the next component. **(NSA CSI)**
 - [ ] Every production agent has a current trifecta scorecard.
 
@@ -464,6 +508,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - [ ] Secure-by-default deployment templates are available.
 - [ ] Every server uses central identity through SSO or OIDC.
 - [ ] Network segmentation limits the reach of unknown services.
+- [ ] Each deployment is classified as all-local, single-tenant remote, or multi-tenant remote, and carries that pattern's mandatory controls. **(CoSAI)**
 
 ### Context and tenant isolation
 
@@ -471,6 +516,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - [ ] Tenant, user, agent, and workflow namespaces are infrastructure-enforced.
 - [ ] Ownership is revalidated on every request.
 - [ ] Sensitive context is classified and tagged at ingestion.
+- [ ] Tool results are minimized to needed fields and redacted before entering context. **(CoSAI)**
 - [ ] Context has enforced TTLs and automatic purging.
 - [ ] Tenant-isolation tests run in CI.
 
@@ -497,10 +543,12 @@ Every MCP deployment should meet these six pillars:
    - Services run as non-root and bind locally when remote exposure is unnecessary.
    - Context and credentials expire automatically.
    - Resource ceilings, rate limits, and timeouts bound every workload. **(NSA CSI)**
+   - The deployment pattern is declared and its mandatory controls are present. **(CoSAI)**
 3. **Trusted, controlled tooling**
    - Every server is inventoried.
    - Tools are vendor-built or independently security-reviewed.
    - Components are signed, pinned, provenance-verified, and continuously revalidated.
+   - Tools are single-purpose and return only the fields the task needs. **(CoSAI)**
 4. **Schema-driven validation**
    - Inputs and outputs are validated at the MCP boundary.
    - Retrieved text is always treated as data, never as a command.
@@ -508,6 +556,7 @@ Every MCP deployment should meet these six pillars:
 5. **Hardened deployment and oversight**
    - Structured tool-call logs flow to a SIEM or XDR.
    - Behavioral baselines and anomaly alerts are active.
+   - High-impact actions preview before they commit and can be rolled back after. **(CoSAI)**
 6. **Trifecta scorecard**
    - Score every agent and workflow for private-data access, untrusted-content ingestion, and external communication.
    - Remove or constrain at least one leg wherever possible.
@@ -549,8 +598,10 @@ A mature MCP security program continuously performs five functions:
 10. Build a trifecta scorecard for every production agent and workflow.
 11. Set hard rate limits, timeouts, and recursion caps on every MCP server and verify runaway tasks are contained. **(NSA CSI)**
 12. Enable message expiry, replay protection, and idempotent handling for consequential operations. **(NSA CSI)**
+13. Add a preview stage and a rollback path to every high-impact tool, and confirm no authorization decision rests on a model's judgment. **(CoSAI)**
 
 ## References
 
 1. Base document: consolidated MCP Top 10 security practices (MCP01–MCP10).
 2. NSA. *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*. U/OO/6030316-26, May 2026.
+3. Coalition for Secure AI. *Model Context Protocol (MCP) Security*. OASIS Open Project, Workstream 4 (Secure Design Patterns for Agentic Systems), approved 8 January 2026. https://www.coalitionforsecureai.org/wp-content/uploads/2026/03/model-context-protocol-security-1.pdf
