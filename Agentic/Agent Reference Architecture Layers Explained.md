@@ -252,6 +252,7 @@ The MCP gateway and delegation rows are the least mature. MCP gateways are new a
 - Docker socket or cluster-admin as the exec channel. That is host root, not a bridge.
 - Limits enforced inside the sandbox. A compromised workload raises them.
 - Shared secrets or static keys across agents. Each agent is its own cryptographic principal.
+- A model-driven coordinator or supervisor agent is a sandboxed workload like any other. It reaches data and destinations only through the exec bridge and tool allowlist, never through a standing credential, regardless of how many downstream agents it coordinates.
 
 ### Decision rule
 If it would be catastrophic for the sandbox to have it, it lives in the orchestrator and reaches the sandbox only as a result, never as a credential.
