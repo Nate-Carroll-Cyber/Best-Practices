@@ -234,6 +234,8 @@ Identity establishes the calling workload. It does not grant permission by itsel
 
 ### 4.2 Least Agency and Delegation
 
+**Orchestrator authority is bounded independently, not inherited.** An orchestrator's delegable authority is scoped at design time to what coordination requires, task decomposition, routing, retry, recovery, never sized as the union of its downstream agents' permissions. An orchestrator holding that combined reach becomes a single high-value compromise target. It may reason over the full content of results its agents return. It holds no standing credential to query source data or write to a destination directly; that stays with the scoped, audited domain agent. Recertify its effective permissions under the same cumulative review as any other agent identity.
+
 Each agent receives only the tools, resources, data, destinations, and action types required for its declared task. Prefer capability-scoped allowlists over broad grants, with explicit denies for sensitive operations.
 
 Delegation must satisfy all of the following:
@@ -685,6 +687,7 @@ Sections 3.2 and 7.1 stop untrusted content from becoming *policy*. This section
 - Re-evaluate proposed actions against the anchored objective during long-running sessions and multi-step workflows, since drift accumulates across steps that are each individually reasonable. Re-evaluation never rewrites the anchor.
 - Run intent-drift detection in an **independent guardrail outside the primary agent's context**. A check that lives inside the context an attacker has already influenced is not a check. This is the §9.5 principle applied to reasoning rather than to records: the evaluator must be something the compromised party cannot author.
 - **A monitor inside a training or evaluation loop becomes an optimization target.** Where a guardrail's verdict feeds a reward signal, a score, or any selection pressure, the workload is being trained to evade it, and evasion becomes less detectable rather than less frequent. Announcing monitoring to the agent has the same effect, raising covert attempts even as overt ones fall. Keep the guardrail out of the reward surface, and treat any rise in the sophistication rather than the rate of violations as evidence this has happened.
+- Score an orchestrator's trifecta status on whether it holds a standing credential to private data, not on whether result content passes through its context for reasoning. Otherwise every orchestrator in a routed multiagent pattern scores a false positive on the data-access leg.
 
 **The capability trifecta**
 
@@ -1059,6 +1062,7 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Replay safety | Idempotency keys on consequential operations | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Consent lifecycle | Renewed approval on server capability change | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Vulnerability management | CVE tracking linked to the server inventory | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Delegation architecture | Orchestrator authority scoped independently of downstream union | Not assessed | Pending | Not tested | Unknown | TBD | TBD
 
 Allowed statuses: `Not assessed`, `Planned`, `Partial`, `Implemented`, `Verified`, `Exception approved`. If coverage percentages are used, document the scoring method, evidence standard, treatment of partial controls, and independent-validation process.
 
@@ -1258,9 +1262,10 @@ Secure agentic AI requires independently enforced controls **around** the model.
 
 ## Version History
 
-**Version:** Consolidated 2.9
+**Version:** Consolidated 2.9.1
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
 
+**Changes from 2.9:** orchestrator authority bounded independently of downstream permission union (§4.2); trifecta scoring for orchestrators clarified to score credential holding, not content passthrough (§7.8); new coverage row (§14).
 **Changes from 2.8:** AIBOM restructured from inventory to scoped graph per the OWASP AIBOM Foundations Guide v1.0, with §10 divided into §10.1 through §10.6; header self-descriptions and completeness claim (§10.1, §10.2); directed flows with zones, behaviors, per-claim evidence, and stable identifiers referenced by the threat model and evidence table (§10.1); declared, reachable, and observed dependency views (§10.3); pipeline generation, regeneration triggers, supplier-side change detection, and the promotion gate on AIBOM currency (§10.5, §12); supplier disclosure requirements (§10.6); AIBOM revision as the starting point for incident scoping (§9.4); tool definition hash recorded in the AIBOM (§6.4); three new regression tests and one verification probe (§11); AIBOM preservation at decommissioning (§13).
 **Changes from 2.7 (delivered in 2.8):** task-shape bounds covering recursion depth, chain length, fan-out, compute budget, and backpressure (§5.2); idempotency keys on consequential operations (§5.2); renewed consent on server capability or data-access change (§6.4); maintenance-status verification and inventory-linked CVE tracking (§10); differential discovery scanning (§4.6); three new regression tests (§11); four new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for idempotency key and differential discovery (§17). Sourced from the MCP Security Best Practices consolidation and NSA, Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation, U/OO/6030316-26, May 2026.
 **Changes from 2.6 (delivered in 2.7):** task feasibility confirmed before session start and non-progress as a signal (§5.2, §9.3); explicit scope-setting instructions phrased as rules rather than environmental claims (§7.8); compaction preserves security determinations and is retained for retrospective review (§7.1, §9.4); reasoning traces excluded from training and fine-tuning data (§9.2); guardrail verdicts kept out of any reward or selection surface (§7.8); auxiliary-model anomalies, approver overrides of detections, and repeated non-progress added as monitoring signals (§9.3); adversarial pre-validation using the model under test, limits of behavioral audits, and six control-environment attack cases (§11); three new regression tests (§11); seven new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for compaction, evaluation awareness, and monitor-as-target (§17); reference additions (§18). Sources for this revision include the UK AI Security Institute incident report INC-2026-07-28-01 (4 August 2026), Anthropic's cybersecurity-evaluation incident disclosures (30 July 2026) and alignment and security follow-up (31 August 2026), and published reward-hacking generalization research.
