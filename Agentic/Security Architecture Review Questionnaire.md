@@ -255,6 +255,7 @@ Score: ___ Notes: ___
 - Orchestrator code path showing hash re-check immediately before exec
 - Timeout behavior (must be deny)
 - List of gated action classes (tool calls, memory writes, retrieval, compaction, subagent start, tool registration, publication to run-readable locations)
+- Orchestrator agent's own effective permission set, compared against the union of its downstream agents' permissions
 
 **Pass criteria.** PDP is out of process, redundant, and its outage pages. Approval binds to a canonical hash and is re-verified before execution. Denials are not retryable and repeated denials alert. Decision log is a second stream the agent runtime cannot write.
 
@@ -269,8 +270,9 @@ Score: ___ Notes: ___
 - What happens when the PDP is unreachable
 - Are memory writes and compaction gated
 - Can the decision log corroborate the transcript during a compromise window
+- Does the orchestrator agent hold any standing credential to source data or destinations, or does it only receive result content that a downstream agent already retrieved under its own scoped credential
 
-**Verification.** Pull one approval record, the matching PDP decision entry, and the matching exec bridge log by correlation ID. Confirm three separate authors. Replay the approval against a modified action and confirm rejection. Stop the PDP in staging and confirm every pending action resolves to deny and an alert fires.
+**Verification.** Pull one approval record, the matching PDP decision entry, and the matching exec bridge log by correlation ID. Confirm three separate authors. Replay the approval against a modified action and confirm rejection. Stop the PDP in staging and confirm every pending action resolves to deny and an alert fires. Enumerate the orchestrator agent's effective permissions separately from the PDP's. Confirm the orchestrator cannot independently query a data source or destination without routing through a domain agent's own scoped credential. If the orchestrator holds a credential broader than coordination requires, that is a finding regardless of whether the PDP correctly gates its use, since a broader-than-necessary standing credential is itself the exposure.
 
 Score: ___ Notes: ___
 
