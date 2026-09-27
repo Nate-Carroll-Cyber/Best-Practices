@@ -28,7 +28,7 @@ Answer before writing any control, and answer again before deployment.
 | Does it ingest untrusted content? (a cached fetch service counts as yes) | | | |
 | Can it communicate externally or take consequential action? | | | |
 
-Three yes answers require removing or constraining at least one leg, or a documented residual-risk decision with a named owner. Where the model itself is the adversary, private data plus external communication alone scores as a trifecta equivalent.
+Three yes answers require removing or constraining at least one leg, or a documented residual-risk decision with a named owner. Where the model itself is the adversary, private data plus external communication alone scores as a trifecta equivalent. Note: For an orchestrator or supervisor agent, "does it reach private data" scores on whether it holds a standing credential, not on whether it receives result content passed to it by a domain agent for routing purposes.
 
 **Owners assigned** (§2.2)
 
@@ -55,6 +55,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Where OAuth is used, tokens are bound to their target with resource indicators, and client credentials are not shared between agents (§4.3)
 - [ ] Development, staging, and production are separated logically and physically, with no credential reuse across them (§4.3)
 - [ ] Delegation narrows or preserves scope at every hop, records the human principal, enforces depth and fan-out limits, and terminates child sessions with the parent. No orphaned agents (§4.2)
+- [ ] Orchestrator and supervisor agent authority is scoped independently of the union of its downstream agents' permissions, and does not hold standing credentials to source data or destinations it merely reasons over the results of (§4.2)
 
 ### A2. Secrets
 
@@ -119,6 +120,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Scope-setting instructions state prohibited actions explicitly, phrased as rules the agent must follow rather than claims about what the environment allows (§7.8)
 - [ ] The transition from planning to consequence is gated by an intent-alignment check (§7.8)
 - [ ] Model identifier, region, sampling parameters, output ceiling, and per-task and per-tenant cost budgets are validated against allowlists and enforced (§7.7)
+- [ ] Orchestrator trifecta scoring reflects standing credential access, not the fact that downstream result content passes through its context for reasoning (§7.8)
 
 ### A6. Error design and service surface
 
