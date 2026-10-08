@@ -1,12 +1,12 @@
 # MCP Security Best Practices
 
-This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements.
+This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements. Items marked **(MCP Spec)** are additions on tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) drawn from the MCP specification, revision 2025-11-25, and the MCP maintainers' post *Tool Annotations as Risk Vocabulary*, 16 March 2026.
 
 ## Core Principles
 
 1. **Keep credentials out of the model context.** The model does not need to see a credential to use a tool. Put credential-handling middleware between the model and the protected service.
 2. **Grant only temporary, task-specific authority.** Use least privilege and just-in-time, short-lived, revocable tokens instead of standing permissions.
-3. **Treat tool metadata and configuration as executable-risk input.** Names, descriptions, parameters, defaults, schemas, manifests, and project settings can influence agent behavior and must be verified before use.
+3. **Treat tool metadata and configuration as executable-risk input.** Names, descriptions, parameters, defaults, annotations, schemas, manifests, and project settings can influence agent behavior and must be verified before use.
 4. **Verify every component in the trusted path.** Sign, pin, inventory, scan, and sandbox schemas, plugins, servers, SDKs, connectors, and dependencies.
 5. **Never turn untrusted text into executable strings.** Use structured process APIs, parameterized queries, validated paths, and allowlisted operations.
 6. **Constrain external communication.** Limit the channels through which credentials and private data can leave, and monitor unexpected outbound connections.
@@ -89,12 +89,14 @@ This guide consolidates the actionable security practices in the supplied text. 
 
 - Digitally sign tool schemas and manifests; reject definitions that do not have a valid signature.
 - Pin tool definitions at the host using trust on first use (TOFU), and flag later changes.
+- Include `annotations` in the signed and pinned definition. Quarantine a tool whose `destructiveHint` changes from `true` to `false`, or whose `readOnlyHint` changes from `false` to `true`, after pinning. A lowered risk declaration on an already-trusted tool is a rug-pull signal. **(MCP Spec)**
 - Bind each tool to known provenance and a known-good version.
 - Scan the **entire** tool schema—not just the tool name or description—including:
   - tool and parameter names;
   - descriptions;
-  - parameter definitions; and
-  - default values.
+  - parameter definitions;
+  - default values; and
+  - annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`). **(MCP Spec)**
 - Treat every metadata field as instruction-grade, untrusted content because it enters model context.
 - Strip ANSI escape sequences and other display-control characters from schema fields so reviewers see the actual content.
 - Require RBAC for any writable schema registry.
@@ -104,6 +106,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Do not assume a user approval step is sufficient if the model has already consumed untrusted tool metadata; validate metadata before it reaches the model.
 - Isolate tools so one tool cannot silently manipulate another tool into accessing or exporting unrelated private data.
 - Design each tool for a single purpose with explicit boundaries. A "do anything" tool cannot be scoped, allowlisted, or reasoned about, and its schema is the largest possible poisoning surface. **(CoSAI)**
+- Set `destructiveHint` to the worst outcome any accepted argument can produce. A tool with a `mode`, `force`, or `overwrite` parameter that can delete or overwrite carries `destructiveHint: true`, or is split into separate additive and destructive tools so each hint is exact. **(MCP Spec)**
 
 ### Detection and review
 
@@ -115,6 +118,8 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Alert whenever the MCP tool list or any tool definition changes.
 - Treat a tool rewriting its own definition as a security signal.
 - Find tools whose description or parameter set spans several unrelated capabilities. **(CoSAI)**
+- Find tools whose name, description, or backing API call uses a delete, drop, overwrite, truncate, or purge verb while `destructiveHint` is `false` or absent. **(MCP Spec)**
+- Run each tool in a sandbox and compare observed side effects against its declared hints. A tool declared `readOnlyHint: true` that writes, or `destructiveHint: false` that deletes or overwrites, is a finding. **(MCP Spec)**
 
 ### Immediate action
 
@@ -201,9 +206,12 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Validate that every planned or requested action remains aligned with the user’s original intent.
 - Add a gate between planning and consequential actions so the agent cannot move directly from reading context to deleting, sending, modifying, or exporting.
 - Use a two-stage commit for high-impact actions. The first stage produces a draft or preview with a draft ID and no side effects. The second stage commits only on explicit confirmation of that specific draft. Where the target supports it, bind the commit to a time window so a stale confirmation cannot execute a changed action. **(CoSAI)**
+- Let tool annotations only raise a gate. `destructiveHint: true` routes the call to the preview and confirm stage. `destructiveHint: false` or `readOnlyHint: true` skips a confirmation only when the server is in the trusted registry, because the spec requires clients to treat annotations from untrusted servers as untrusted and a server can declare `readOnlyHint: true` and still delete. **(MCP Spec)**
+- Treat a tool with no annotations as destructive, non-idempotent, and open-world, matching the spec defaults (`destructiveHint` defaults to `true`). Verify the client applies those defaults, since clients differ in how strictly they honor them. **(MCP Spec)**
 - Provide a rollback or undo path for every consequential tool, using snapshots, reversible operations, or retained drafts. A tool with no undo should carry the highest gate. **(CoSAI)**
 - Use an independent guardrail model or control outside the primary agent’s context to detect intent drift and mismatched actions. The guardrail advises. It never authorizes. Authorization decisions rest on deterministic policy and verified identity, never on the judgment of any model, primary or guardrail. **(CoSAI)**
 - Do not rely solely on human approval for safety. Approvers fatigue and start confirming by habit. Pair confirmation prompts with hard authorization boundaries, keep the prompt rate low enough that each one gets read, and make security-relevant prompts state the consequence plainly. Where the server can request confirmation itself through MCP elicitation, do so from the server, so the check does not depend on the client's implementation. **(CoSAI)**
+- On trusted servers, set `readOnlyHint: true` on read-only tools and `destructiveHint: false` on additive tools so confirmation prompts fire only for calls that can delete or overwrite. Accurate hints are what keep the prompt rate low enough to be read. **(MCP Spec)**
 - Re-anchor the original intent during long-running sessions and multi-step workflows.
 - Treat context preconditioning as an attack vector: probabilistic interpretation of prior context means an actor can seed context history to steer the agent toward a specific unsafe outcome; constrain how much prior context can influence consequential decisions. **(NSA CSI)**
 - Inspect and filter each tool’s output before passing it to the next component in a chained pipeline — content length checks, disallowed-keyword scanning, and detection of injected prompts or code elements that could alter downstream behavior. **(NSA CSI)**
@@ -217,6 +225,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Identify “blind planning” paths that execute immediately after retrieving context.
 - Find high-impact tools that execute in a single call with no preview stage, and consequential tools with no rollback path. **(CoSAI)**
 - Find approval flows that fire often enough that approvers no longer read them. **(CoSAI)**
+- Find clients that auto-approve calls on the strength of `readOnlyHint: true` or `destructiveHint: false` from servers outside the trusted registry, and clients that run unannotated tools without confirmation. **(MCP Spec)**
 - Find prompts that merge system instructions and untrusted context without clear boundaries.
 - Test long-running sessions for gradual intent drift.
 - Test identical prompts under varied context histories for divergent, unsafe interpretations — non-deterministic behavior across deployments is itself an exploitable gap. **(NSA CSI)**
@@ -239,6 +248,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Require mutual authentication between clients, agents, tools, and servers; use mTLS where appropriate. For workload-to-workload identity, a SPIFFE/SPIRE deployment issues and rotates the short-lived cryptographic identities (SVIDs) that mutual authentication needs, without long-lived certificates in configuration. **(CoSAI)**
 - Validate every token server-side, on every request, for authenticity, validity, expiry, intended resource, and authorization for the specific action.
 - Make authorization decisions server-side from verified facts, never from client-supplied identity, roles, or scopes.
+- Classify each tool's destructiveness in the gateway or registry record and enforce from that record. The server's declared `destructiveHint` is an input to review, never the authorization fact, and a tool with no registry classification fails closed to destructive. **(MCP Spec)**
 - Enforce scope checks for every tool and resource request.
 - Use OAuth resource indicators to bind a token to its intended target server and prevent cross-resource replay.
 - Never pass a client token through to a downstream service.
@@ -435,6 +445,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Tool-list and runtime schema changes trigger alerts.
 - [ ] Capability or data-access changes on a connected server trigger renewed user consent. **(NSA CSI)**
 - [ ] Every tool is single-purpose with explicit boundaries. **(CoSAI)**
+- [ ] Tool annotations are signed and pinned with the schema, set to the worst-case argument path, and a lowered risk hint quarantines the tool. **(MCP Spec)**
 
 ### Supply chain and networking
 
@@ -469,6 +480,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] System instructions and retrieved content remain structurally separate.
 - [ ] Consequential actions require an intent-alignment check.
 - [ ] High-impact actions use a two-stage commit with a preview and a bound confirmation. **(CoSAI)**
+- [ ] Annotations only raise a gate. Hints from untrusted servers never skip confirmation, and unannotated tools are treated as destructive. **(MCP Spec)**
 - [ ] Every consequential tool has a rollback or undo path. **(CoSAI)**
 - [ ] An independent guardrail detects intent drift and never authorizes. **(CoSAI)**
 - [ ] Human approval is paired with hard boundaries and kept at a rate approvers actually read. **(CoSAI)**
@@ -480,6 +492,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Clients, agents, tools, and servers mutually authenticate.
 - [ ] Every token is validated server-side on every request.
 - [ ] Authorization is enforced server-side using verified identity and scope.
+- [ ] Tool destructiveness is classified in the gateway or registry, not taken from the server's declared hint. **(MCP Spec)**
 - [ ] Tokens are bound to their intended resource.
 - [ ] Client tokens are never passed through downstream.
 - [ ] Downstream access uses token exchange or on-behalf-of delegation.
@@ -605,3 +618,5 @@ A mature MCP security program continuously performs five functions:
 1. Base document: consolidated MCP Top 10 security practices (MCP01–MCP10).
 2. NSA. *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*. U/OO/6030316-26, May 2026.
 3. Coalition for Secure AI. *Model Context Protocol (MCP) Security*. OASIS Open Project, Workstream 4 (Secure Design Patterns for Agentic Systems), approved 8 January 2026. https://www.coalitionforsecureai.org/wp-content/uploads/2026/03/model-context-protocol-security-1.pdf
+4. Model Context Protocol. *Specification, revision 2025-11-25, Server Features, Tools* and `ToolAnnotations` schema. https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+5. Hungerford, Morrow, Chang. *Tool Annotations as Risk Vocabulary: What Hints Can and Can't Do*. Model Context Protocol Blog, 16 March 2026. https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/
