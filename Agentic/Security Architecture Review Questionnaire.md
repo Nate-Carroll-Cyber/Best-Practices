@@ -2,7 +2,7 @@
 
 ## How to use this
 
-Eleven questions. Each one targets a claim that is commonly made about agent deployments and commonly untrue. The reviewer asks the question, records the answer verbatim, requests the listed evidence, runs the verification, and scores the item. The questionnaire is complete when every item has a score and every score below 3 has an entry in the findings register.
+Twelve questions. Each one targets a claim that is commonly made about agent deployments and commonly untrue. The reviewer asks the question, records the answer verbatim, requests the listed evidence, runs the verification, and scores the item. The questionnaire is complete when every item has a score and every score below 3 has an entry in the findings register.
 
 Interview answers are recorded but never scored on their own. Only evidence and verification results move the score.
 
@@ -20,7 +20,7 @@ Items 1, 2, 3, 7 and 8 are gating. A score below 3 on any gating item blocks pro
 
 ## Reviewer inputs
 
-Before the session, obtain: the architecture diagram with trust boundaries, the sandbox namespace manifests and admission policies, the egress proxy configuration, one full session transcript with correlation IDs, one approval record, the Inspect (or equivalent) task file and one eval log, the tool registry or manifest store, the signed AIBOM for the system under review with its promotion gate configuration, and read access to a representative non-production cluster.
+Before the session, obtain: the architecture diagram with trust boundaries, the sandbox namespace manifests and admission policies, the egress proxy configuration, one full session transcript with correlation IDs, one approval record, the Inspect (or equivalent) task file and one eval log, the tool registry or manifest store, the signed AIBOM for the system under review with its promotion gate configuration, the retirement record for one recently retired agent or tool server, and read access to a representative non-production cluster.
 
 ---
 
@@ -231,6 +231,7 @@ Score: ___ Notes: ___
 
 **Follow-ups.**
 - Were instructions addressed to the guardrail, obfuscated policy-relevant values, self-modification of policy, second-session spawning, violations buried in long diffs, and monitor tampering all tested
+- Was oversized input that fills the context window until built-in instructions are truncated tested, and did every broker decision stay the same once the instructions were gone
 - Where are eval logs published and who reads them
 - Does the model identifier in the eval log match the model component the AIBOM records for production, or has a provider alias moved since the eval ran
 
@@ -270,6 +271,7 @@ Score: ___ Notes: ___
 - What happens when the PDP is unreachable
 - Are memory writes and compaction gated
 - Can the decision log corroborate the transcript during a compromise window
+- What retention period applies to the decision log, who owns that decision, and does it meet the floor in each jurisdiction of operation (China's TC260 Framework 3.0 sets at least six months for operational logs)
 - Does the orchestrator agent hold any standing credential to source data or destinations, or does it only receive result content that a downstream agent already retrieved under its own scoped credential
 
 **Verification.** Pull one approval record, the matching PDP decision entry, and the matching exec bridge log by correlation ID. Confirm three separate authors. Replay the approval against a modified action and confirm rejection. Stop the PDP in staging and confirm every pending action resolves to deny and an alert fires. Enumerate the orchestrator agent's effective permissions separately from the PDP's. Confirm the orchestrator cannot independently query a data source or destination without routing through a domain agent's own scoped credential. If the orchestrator holds a credential broader than coordination requires, that is a finding regardless of whether the PDP correctly gates its use, since a broader-than-necessary standing credential is itself the exposure.
@@ -439,6 +441,7 @@ Score: ___ Notes: ___
 - Are the author and the approver the same person or team
 - For fine-tuned models, is there a pipeline-scope AIBOM linked to the artifact-scope one
 - Which incident, audit, or procurement decision last read this document
+- Does each connector and hosted model record its region, and for deployments under Chinese jurisdiction, is data collected or generated in China stored in China and is user consent obtained before user data reaches a model or third-party tool
 
 **Verification.** Commands below assume CycloneDX JSON and cosign. Substitute the equivalent for the format and signer in use.
 ```
@@ -449,6 +452,49 @@ jq -r '.components[] | select(.type=="machine-learning-model") | "\(.name) \(.ve
 grep -iE 'api[_-]?key|secret|token|password|BEGIN .*PRIVATE' aibom.json
 ```
 The signature must verify. The credential grep must return nothing. Then, using the AIBOM alone, state which model version is running, what it was tuned on, who the upstream supplier is, and what the license permits. Every question the document cannot answer is a finding. Compare the recorded model version against the resolved model identifier in the most recent audit records. Compare the recorded tool definition hashes against the live gateway (Item 10). Pull a week of broker decision logs and list every destination absent from the AIBOM. Each one is a shadow dependency. In staging, attempt one promotion with the AIBOM removed and one with an AIBOM older than the last trigger event. Both must be rejected. Attempt a write to the AIBOM store under the sandbox workload identity. It must be denied.
+
+Score: ___ Notes: ___
+
+---
+
+## Item 12. Retirement
+
+**Claim being tested.** "That agent was decommissioned."
+
+**Question.** When an agent or tool server is retired, what confirms that its processes, credentials, third-party authorizations, and entry points are gone, and what moves it out of the registry?
+
+**Why it matters.** A stopped workload is not a retired one. Processes, listening ports, service accounts, OAuth grants, webhooks, subscriptions, and DNS records outlive the deployment that created them. A retired agent that still holds a credential is a shadow server with a clean inventory entry.
+
+**Evidence required.**
+- Registry lifecycle states including a retired state, with the exit checks required to reach it
+- Retirement record for one recently retired agent or tool server, showing each check and who performed it
+- Revocation evidence for service accounts, interface permissions, Vault leases, STS sessions, and third-party authorizations
+- Cancellation evidence for subscriptions, auto-renewals, webhooks, and scheduled jobs
+- Backup record for retained session records, configuration, knowledge-base files, and logs, tied to the retention decision
+- Cleanup evidence for residual files, plugin and skill configurations, cached credentials, DNS records, and public entry points
+
+**Pass criteria.** Retirement is a registry state reached only through recorded exit checks. Termination of the main process, background services, and child processes is confirmed by observing process state, listening ports, and network connections. Every credential and third-party authorization is revoked. Retained records are backed up before cleanup. AIBOM revision history is preserved after retirement.
+
+**Red-flag answers (score 0).**
+- "We deleted the deployment"
+- "It's scaled to zero"
+- "Nobody uses it anymore"
+- "The credentials will expire on their own"
+- A registry with no retired state
+
+**Follow-ups.**
+- Who owns retirement, and what triggers it
+- Are third-party OAuth grants, webhooks, and subscriptions inventoried per agent so they can be revoked
+- Is termination confirmed by observation or assumed from the command returning
+- What happens to memory and knowledge stores the agent wrote
+
+**Verification.** Pick the two or three most recently retired agents or tool servers from the registry and check each one from infrastructure, not from the retirement record.
+```
+kubectl get pods,svc,ingress,cronjob -A -l agent=<retired-name>
+kubectl get serviceaccount -A | grep <retired-name>
+dig +short <retired-endpoint>
+```
+All three must return nothing. Then confirm that the retired workload identity fails to authenticate, its Vault leases and STS sessions are revoked, its third-party authorizations are absent from each provider's console, and the egress proxy log shows no requests from it after the retirement timestamp. Attempt a deployment under the retired identity and confirm registration refuses it. Anything still live is a finding.
 
 Score: ___ Notes: ___
 
@@ -478,6 +524,7 @@ Severity guide. Critical for any gating item at 0 or 1. High for any gating item
 | 9. Containment | No | |
 | 10. Tool integrity | No | |
 | 11. Dependency record | No | |
+| 12. Retirement | No | |
 
 Production approval requires every gating item at 3 or above and no Critical findings open.
 
