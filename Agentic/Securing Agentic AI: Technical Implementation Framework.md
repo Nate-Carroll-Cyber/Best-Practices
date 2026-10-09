@@ -297,6 +297,7 @@ The registry in §4.4 answers "where is this service." This section answers the 
 
 - **Registration is a deployment gate, not a courtesy.** An unregistered server must fail to deploy, fail to obtain credentials, or fail to be reachable. A registry that depends on voluntary compliance measures compliance, not exposure.
 - Every registered server carries a named owner and a lifecycle state, and is revalidated on a schedule. Approval is not permanent.
+- **Retirement is a lifecycle state with exit checks, not a deletion.** A retired agent or server leaves the registry only after its main process, background services, and child processes are confirmed terminated, with process state, listening ports, and network connections each checked rather than assumed. Its service accounts, interface permissions, and third-party authorizations are revoked, and its subscriptions and auto-renewals are cancelled. Session records, configuration, knowledge-base files, and logs that must be kept are backed up before cleanup under the retention decision in §9.1. Residual files, plugin and skill configurations, cached credentials, and public entry points are then removed. A workload that is stopped but not retired still holds credentials and reachability, which is the shadow-server condition this section exists to find.
 - **Run continuous discovery** across networks, source repositories, developer environments, container registries, and CI/CD — not a one-time inventory. Reconcile discovered services against the registry and investigate gaps in both directions.
 - Alert whenever an agent connects to an endpoint absent from the approved registry. This is the highest-yield detection available for shadow infrastructure, because it catches servers no scan reached.
 - Search repositories for MCP and agent configuration files (`mcp.json` and equivalents) as a first-pass inventory, then reconcile against network scans and the registry.
@@ -593,7 +594,7 @@ Compaction must also preserve security-relevant *determinations*, not only label
 
 Content scanning and prompt-injection classifiers are **signals, not authorization mechanisms**. They may block, warn, reduce privileges, or trigger review, but sensitive actions still require deterministic policy enforcement.
 
-Known context-engineering threats to model against: context poisoning (malicious data injected via memory/tool output), context distraction (irrelevant content to derail focus), context confusion (contradictory content), and compression-induced loss of security markers.
+Known context-engineering threats to model against: context poisoning (malicious data injected via memory/tool output), context distraction (irrelevant content to derail focus), context confusion (contradictory content), context overflow (oversized input that fills the window until built-in instructions are truncated), and compression-induced loss of security markers. Overflow removes guidance and not enforcement, because a rule that exists only in the prompt was never a control (§8).
 
 Error payloads, tool metadata, and protocol fields are untrusted content on the same terms as document text, and are more frequently exempted from scanning by accident (§6.4, §6.5.2).
 
@@ -1012,7 +1013,7 @@ Advancement is **evidence-based, not time-based**. A fixed number of operating h
 
 **Phase 3 — Limited Production:** defined user cohort and use cases; bounded tools, destinations, and data; enhanced monitoring and daily review; tested rollback and kill switch; explicit go/no-go criteria.
 
-**Phase 4 — General Production:** scale only within validated boundaries; continuous control evidence and testing; periodic access and tool recertification; change-triggered reassessment; documented decommissioning and data-deletion plan, with the AIBOM revision history preserved after retirement (§10.5).
+**Phase 4 — General Production:** scale only within validated boundaries; continuous control evidence and testing; periodic access and tool recertification; change-triggered reassessment; documented decommissioning and data-deletion plan executed through the retirement exit checks in §4.6, with the AIBOM revision history preserved after retirement (§10.5).
 
 Each transition requires security, operations, product, and compliance sign-off plus a tested rollback plan.
 
@@ -1062,7 +1063,8 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Replay safety | Idempotency keys on consequential operations | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Consent lifecycle | Renewed approval on server capability change | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Vulnerability management | CVE tracking linked to the server inventory | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
-| Delegation architecture | Orchestrator authority scoped independently of downstream union | Not assessed | Pending | Not tested | Unknown | TBD | TBD
+| Delegation architecture | Orchestrator authority scoped independently of downstream union | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Decommissioning | Retirement exit checks on processes, ports, connections, credentials, and third-party authorizations | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 
 Allowed statuses: `Not assessed`, `Planned`, `Partial`, `Implemented`, `Verified`, `Exception approved`. If coverage percentages are used, document the scoring method, evidence standard, treatment of partial controls, and independent-validation process.
 
@@ -1085,6 +1087,8 @@ The following illustrates the intended mapping *shape* — each row supports, an
 | Error design & data protection (§6.5) | MANAGE / MEASURE | Cybersecurity; accuracy & robustness | Fail-closed failure handling without disclosure or injection |
 | Human oversight (§8) | MANAGE | Human oversight / stop mechanism | Bound approval and emergency stop for high-impact actions |
 | Audit & monitoring (§9) | GOVERN / MEASURE | Record-keeping & traceability | Tamper-evident, independently stored decision records |
+
+**Deployments under Chinese jurisdiction.** TC260's AI Safety Governance Framework 3.0 (September 2026) is non-binding guidance and a planning aid on the same terms as the mappings above. Four of its provisions set expectations this framework leaves to the deployer. Operational logs are retained for at least six months and audited (5.3.6, see §9.1). Data collected or generated in China is stored in China, and cross-border transfer follows national data security rules (Appendix 2, see §10.3 and §10.6). User consent is obtained before user data is passed to a model or a third-party tool, and the user can withdraw it (Appendix 2, see §7.7). Major incidents are reported to the competent authorities and affected users are notified (5.3.18, see §9.4). Binding obligations come from Chinese law, regulation, and mandatory standards, so confirm each one against the current text with qualified counsel.
 
 ---
 
@@ -1234,6 +1238,7 @@ Maintain dated references to the authoritative versions the organization actuall
 - Applicable EU AI Act text and implementation guidance
 - NIST AI Risk Management Framework and relevant profiles
 - NIST cybersecurity and identity guidance
+- TC260 (National Technical Committee 260 on Cybersecurity of SAC), AI Safety Governance Framework 3.0 (September 2026, non-binding), including its Appendix 2 agentic AI risk management framework, where a deployment falls under Chinese jurisdiction
 - ISO/IEC 27001 and related AI management standards (identify edition)
 - AICPA Trust Services Criteria
 - W3C DID specifications (when DIDs are used)
@@ -1262,8 +1267,10 @@ Secure agentic AI requires independently enforced controls **around** the model.
 
 ## Version History
 
-**Version:** Consolidated 2.9.1
+**Version:** Consolidated 2.9.2
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
+
+**Changes from 2.9.1:** retirement exit checks added as a lifecycle state (§4.6), with a Phase 4 cross-reference (§13) and a coverage row (§14); context overflow added to the context-engineering threats (§7.1); planning note for deployments under Chinese jurisdiction, drawn from TC260 AI Safety Governance Framework 3.0 (§15, §18).
 
 **Changes from 2.9:** orchestrator authority bounded independently of downstream permission union (§4.2); trifecta scoring for orchestrators clarified to score credential holding, not content passthrough (§7.8); new coverage row (§14).
 **Changes from 2.8:** AIBOM restructured from inventory to scoped graph per the OWASP AIBOM Foundations Guide v1.0, with §10 divided into §10.1 through §10.6; header self-descriptions and completeness claim (§10.1, §10.2); directed flows with zones, behaviors, per-claim evidence, and stable identifiers referenced by the threat model and evidence table (§10.1); declared, reachable, and observed dependency views (§10.3); pipeline generation, regeneration triggers, supplier-side change detection, and the promotion gate on AIBOM currency (§10.5, §12); supplier disclosure requirements (§10.6); AIBOM revision as the starting point for incident scoping (§9.4); tool definition hash recorded in the AIBOM (§6.4); three new regression tests and one verification probe (§11); AIBOM preservation at decommissioning (§13).
