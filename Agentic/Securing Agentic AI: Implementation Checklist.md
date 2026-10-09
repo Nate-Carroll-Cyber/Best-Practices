@@ -1,6 +1,6 @@
 # Securing Agentic AI: Implementation Checklist
 
-Companion to *Securing Agentic AI: Technical Implementation Framework*, Consolidated 2.9. Every item is self-contained and answerable without opening the framework. Section references in parentheses point to the source text for anyone who wants the reasoning.
+Companion to *Securing Agentic AI: Technical Implementation Framework*, Consolidated 2.9.2. Every item is self-contained and answerable without opening the framework. Section references in parentheses point to the source text for anyone who wants the reasoning.
 
 **How to use.** Answer each item with implemented, partial, planned, exception approved, or not assessed, and record the evidence and the owner. Do not report a percentage complete. Gate A must pass before production. Gate B must pass before scaling beyond the initial cohort. Gate C runs continuously.
 
@@ -16,6 +16,7 @@ Answer before writing any control, and answer again before deployment.
 - [ ] Decisions and actions the system can take, and their reversibility, are enumerated (§2.1)
 - [ ] External connectivity, tool privileges, multi-agent dependencies, and third-party dependencies are enumerated (§2.1)
 - [ ] Applicable jurisdictions and sector obligations are identified, with the organization's legal role named (§2.1, §15)
+- [ ] Where a deployment falls under Chinese jurisdiction, four expectations from TC260 AI Safety Governance Framework 3.0 are assessed against current law with counsel. Operational logs kept at least six months and audited, data collected or generated in China stored in China, user consent obtained and withdrawable before user data reaches a model or third-party tool, and major incidents reported to the competent authorities with affected users notified (§15)
 - [ ] The trifecta scorecard below is complete and dated (§7.8)
 - [ ] It is recorded whether the system executes model-generated code, runs training or evaluation workloads, or hosts research models. These are high-risk by default (§2.1)
 - [ ] Approval status has not been allowed to lower the classification. A sanctioned embedded feature is classified on the data it reaches and the actions it takes (§2.1)
@@ -103,6 +104,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 
 - [ ] Every input carries provenance and trust metadata, including user input. Labels survive selection, summarization, compression, and storage (§7.1)
 - [ ] Compaction preserves security determinations, not only labels. Out-of-scope conclusions, realness determinations, and refusals carry forward with their uncertainty intact (§7.1)
+- [ ] Context overflow is in the threat model. Oversized input that fills the context window until built-in instructions are truncated removes no control, because every safety-relevant rule is enforced outside the prompt (§7.1, §8)
 - [ ] Error payloads, tool metadata, and protocol fields are scanned as untrusted content on the same terms as document text (§7.1)
 - [ ] Models propose typed actions, never executable command strings. Schemas reject unknown fields and canonicalize values (§7.2)
 - [ ] Authorization and business rules are verified separately from schema validation (§7.2)
@@ -246,6 +248,9 @@ Apply where Step 0 flagged the condition.
 - [ ] Periodic access and tool recertification, and change-triggered reassessment (§13)
 - [ ] Independent assurance and regulatory-mapping updates (§15)
 - [ ] Documented decommissioning and data-deletion plan, with AIBOM revision history preserved after retirement (§13)
+- [ ] Retirement runs as a lifecycle state with exit checks. Main process, background services, and child processes are confirmed terminated, with process state, listening ports, and network connections each checked rather than assumed (§4.6)
+- [ ] A retired agent or server has its service accounts, interface permissions, and third-party authorizations revoked and its subscriptions and auto-renewals cancelled before it leaves the registry (§4.6)
+- [ ] Records that must be kept are backed up before cleanup under the retention decision, and residual files, plugin and skill configurations, cached credentials, and public entry points are then removed (§4.6, §9.1)
 - [ ] AIBOM programme metrics are reported, covering coverage, trigger-to-update lag, field population against tier minimum, disclosure-to-assessed-impact time, and supplier compliance. These measure the programme, not the systems (§10.5)
 
 ---
@@ -310,6 +315,7 @@ One-off exercises that produce evidence. Informative either way.
 - [ ] Determine for each production agent whether its tool servers are vendor-built or drawn from an unreviewed repository
 - [ ] Enumerate every outbound path from agent workloads, including shared services with their own egress, and compare against the allowlist. Any path a workload identity could have created is a critical finding
 - [ ] Search public code hosts, model hubs, package registries, and paste services for tokens attributable to the organization. Revoke every match
+- [ ] For the last two or three retired agents or tool servers, confirm that no process, listening port, credential, third-party authorization, or public entry point survives. Anything still live is a finding
 - [ ] For two or three production agents, answer from records alone which model version is running, what it was tuned on, who the upstream supplier is, and what the license permits. Every unanswerable question is a finding
 
 ---
