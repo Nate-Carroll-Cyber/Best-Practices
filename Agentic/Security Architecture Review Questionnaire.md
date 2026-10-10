@@ -2,9 +2,9 @@
 
 ## How to use this
 
-Twelve questions. Each one targets a claim that is commonly made about agent deployments and commonly untrue. The reviewer asks the question, records the answer verbatim, requests the listed evidence, runs the verification, and scores the item. The questionnaire is complete when every item has a score and every score below 3 has an entry in the findings register.
+Fourteen questions. Each one targets a claim that is commonly made about agent deployments and commonly untrue. The reviewer asks the question, records the answer verbatim, requests the listed evidence, runs the verification, and scores the item. The questionnaire is complete when every item has a score and every score below 3 has an entry in the findings register with a gap type.
 
-Interview answers are recorded but never scored on their own. Only evidence and verification results move the score.
+Interview answers are recorded but never scored on their own. Only evidence and verification results move the score. Interview evidence caps an item at 1 even where the answer is detailed and credible.
 
 ## Scoring
 
@@ -12,15 +12,21 @@ Interview answers are recorded but never scored on their own. Only evidence and 
 |---|---|
 | 0 | Control absent, or the answer describes one of the listed red-flag patterns |
 | 1 | Control claimed, no evidence produced |
-| 2 | Evidence produced, verification not run or failed |
+| 2 | Evidence produced, verification not run |
 | 3 | Verification passed on a representative production configuration |
 | 4 | Verification passed and the control is enforced by admission, policy, or infrastructure the workload cannot modify |
 
-Items 1, 2, 3, 7 and 8 are gating. A score below 3 on any gating item blocks production approval regardless of the total.
+A verification that was run and failed scores 1 with gap type Control, not 2. The 2 is reserved for an item whose evidence exists and whose verification the reviewer did not reach, so that "not yet checked" and "checked and broken" never share a score.
+
+Every score of 1 or 2 carries one or more gap types in the findings register. Document means the control operates and only the named artifact (export, owner, procedure, record) is missing. Measure means the control operates and its inputs exist but the figure the item asks for has not been computed. Scope means the control operates in part of the estate under review and not in another named part, and an unverified part counts as uncovered. Control means the mechanism is absent, misconfigured, or failed verification where observed. A Planned marker may be added to any item below 3, recording an owner and a closure date no more than 180 days out for a funded plan. The marker carries no scoring weight and never changes a score.
+
+An item whose evidence was requested and not produced within the review window is marked Not assessable rather than scored. It counts as unknown in the summary and blocks the strict figure, since the reviewer could not form a view.
+
+Items 1, 2, 3, 7, 8 and 13 are gating. A score below 3 on any gating item blocks production approval regardless of the total.
 
 ## Reviewer inputs
 
-Before the session, obtain: the architecture diagram with trust boundaries, the sandbox namespace manifests and admission policies, the egress proxy configuration, one full session transcript with correlation IDs, one approval record, the Inspect (or equivalent) task file and one eval log, the tool registry or manifest store, the signed AIBOM for the system under review with its promotion gate configuration, the retirement record for one recently retired agent or tool server, and read access to a representative non-production cluster.
+Before the session, obtain: the architecture diagram with trust boundaries, the sandbox namespace manifests and admission policies, the egress proxy configuration, one full session transcript with correlation IDs, one approval record, the Inspect (or equivalent) task file and one eval log, the tool registry or manifest store, the signed AIBOM for the system under review with its promotion gate configuration, the retirement record for one recently retired agent or tool server, the decision-rights register export with its change history and one promotion or demotion record, the reversal-rate report per GITL action class for the last observation window, the seeded-error placement and outcome records for the last 30 days, and read access to a representative non-production cluster.
 
 ---
 
@@ -255,7 +261,7 @@ Score: ___ Notes: ___
 - One approval record showing canonical action hash, approver principal from an IdP assertion, policy version, timestamp, correlation ID
 - Orchestrator code path showing hash re-check immediately before exec
 - Timeout behavior (must be deny)
-- List of gated action classes (tool calls, memory writes, retrieval, compaction, subagent start, tool registration, publication to run-readable locations)
+- List of gated action classes (tool calls, memory writes, retrieval, compaction, subagent start, tool registration, publication to run-readable locations), each resolving to a decision-rights register entry (Item 13), with the entry version recorded on every decision record
 - Orchestrator agent's own effective permission set, compared against the union of its downstream agents' permissions
 
 **Pass criteria.** PDP is out of process, redundant, and its outage pages. Approval binds to a canonical hash and is re-verified before execution. Denials are not retryable and repeated denials alert. Decision log is a second stream the agent runtime cannot write.
@@ -270,6 +276,7 @@ Score: ___ Notes: ___
 **Follow-ups.**
 - What happens when the PDP is unreachable
 - Are memory writes and compaction gated
+- Is the gated class list derived from the decision-rights register or maintained separately, and what happens when the two disagree (Item 13)
 - Can the decision log corroborate the transcript during a compromise window
 - What retention period applies to the decision log, who owns that decision, and does it meet the floor in each jurisdiction of operation (China's TC260 Framework 3.0 sets at least six months for operational logs)
 - Does the orchestrator agent hold any standing credential to source data or destinations, or does it only receive result content that a downstream agent already retrieved under its own scoped credential
@@ -335,7 +342,7 @@ Score: ___ Notes: ___
 - Identity the stop runs under and confirmation the workload pool cannot assume it
 - Lease and STS revocation as part of the stop
 - Admission deny list preventing restart
-- Latch behavior for privileged, destructive, financial, and externally visible action classes
+- Latch behavior for privileged, destructive, financial, and externally visible action classes, and class-wide latch with register demotion when the tripping action ran under a GITL class (Item 13)
 - Last test date and measured time to confirmed halt
 
 **Pass criteria.** Class-scoped stop exists, runs from a separate account or trust domain, revokes credentials, prevents restart, is latched until operator reset, and has been exercised with synthetic sessions. Per-server kill switch disables a tool server, revokes its credentials, and cuts its reachability in minutes without a deployment cycle.
@@ -500,14 +507,94 @@ Score: ___ Notes: ___
 
 ---
 
+## Item 13. Decision rights
+
+**Claim being tested.** "A human approves anything risky."
+
+**Question.** Which register maps every automated action class to HITL or GITL, what tests admitted each GITL class, and what demotes it?
+
+**Why it matters.** Approval policy that lives in a prompt, a Slack habit, or an engineer's judgment is not a control, and "the agent asks first" says nothing about which classes it does not ask about. Autonomy is granted per action class on evidence, and a class that runs without a person needs a record of why. A GITL class whose mistakes nobody counts has no ceiling, and a register the agent can edit is a register the agent controls.
+
+**Evidence required.**
+- Register export listing every automated action class with mode (HITL or GITL), named owner, four-test result (reversible, non-disruptive, not externally visible, not subject to regulatory attestation), reversal ceiling, observation window, and promotion and demotion history
+- Permanent HITL entries present for backup deletion, retention shortening, immutability changes, recoverability reduction, OT and safety-system containment, permanent deletion, fund transfers, permission changes, PII disclosure, and production modification
+- Change-control record for the register showing approver on each change and a denied write attempt under a workload identity
+- PDP policy or configuration showing routing derived from the register (Item 7)
+- Reversal-rate report per GITL class for the last observation window, with the counting method
+- One promotion record showing the window and rate that justified it, or a statement that no class has yet been promoted
+- One demotion record following an incident or a reversal spike, or a tested demotion path if none has occurred
+- Skills reservations listed in the register with task, role, cadence, and review date (Item 14)
+
+**Pass criteria.** Every class the PDP has decided in the last 30 days has a register entry. Each GITL entry passes all four tests on inspection of what the class actually does in production. Reversal rate is computed from records for every GITL class and sits below its stated ceiling. Promotion history shows an observation window of at least one quarter before any class went GITL. The register is change-controlled, agent writes are denied, and a demotion path has been exercised. Permanent HITL entries are present and cannot be promoted.
+
+**Red-flag answers (score 0).**
+- "The agent asks for confirmation before anything risky"
+- "We have an allowlist of safe tools" offered as the register
+- "Everything is human-approved" with no list of classes
+- A GITL class with no reversal count
+- Patching, deletion, or any production-modifying class marked GITL
+- Register content maintained in the system prompt or agent configuration
+- Promotion granted at a phase transition or go-live rather than after an observation window
+
+**Follow-ups.**
+- Who may promote a class, and can that person also be the class owner
+- What counts as a reversal, who records it, and can the agent's own retry mask one
+- Has any GITL class been demoted, and what happened to actions in flight when it was
+- Which classes does the agent attempt that the register does not list, and are those attempts visible (Item 7)
+- Does the register distinguish non-disruptive isolation of a single endpoint or account from disruption of a production service, and who made that determination
+
+**Verification.** Pull one week of PDP decision records and group them by action class. Every class without a register entry is a critical finding. For each GITL class, compute the reversal rate from change, ticket, or rollback records independently of the register's own report and compare the two figures. Pick one GITL class and test its four properties against production behavior rather than its description. Confirm a reversal path exists and has been used, confirm no production service is interrupted by the action, confirm nothing outside the organization observes it, and confirm it does not alter attested records. Attempt a register write under the sandbox workload identity and under the orchestrator identity. Both must be denied and logged. In staging, inject a reversal spike for a synthetic GITL class and confirm the entry reopens without human initiation.
+
+Score: ___ Notes: ___
+
+---
+
+## Item 14. Validator competence
+
+**Claim being tested.** "A human reviews the agent's output."
+
+**Question.** How does the organization know its validators would catch an error, and which work is kept human-performed so they can?
+
+**Why it matters.** A human in the loop who approves everything is a latency, not a control. Approval rate, decision time, and override rate show whether a validator is reading. Only a planted error shows whether they would notice. Validators who never perform the work they check lose the judgment to check it, and every class promoted to GITL raises what the remaining human review must catch.
+
+**Evidence required.**
+- Seeded-error program description naming who generates the items, where they are generated, and how validators are prevented from distinguishing them
+- Seeded items placed in the last 30 days with outcome (caught, passed) per validator and per action class
+- Catch rate per validator over time, with the baseline and the review threshold
+- Record of a review or retraining triggered by a falling rate, or a statement that none has triggered
+- Skills reservations from the decision-rights register (Item 13) with task, role, cadence, and evidence the work was performed on that cadence
+- Approval timing and override metrics per approver (Item 7)
+
+**Pass criteria.** Seeded items are generated outside the agent runtime and are not disclosed to it. Every active validator received seeded items in the period. Catch rate is reported per validator and per action class, a threshold exists, and a falling rate has a defined consequence. Catch rate has held or improved across every GITL promotion in the register's history. Skills reservations exist, are enforced as denied action classes for the agent, and show performance records on the stated cadence. A seeded error that reached production is recorded as an incident of the validation path.
+
+**Red-flag answers (score 0).**
+- "Our analysts are experienced"
+- "We sample ten percent" with no seeded items
+- Seeded items generated by the agent under review or drawn from its own output
+- Catch rate reported for the team, not per validator
+- "Nobody has missed one" with no record of placements
+- No skills reservations, or reservations with no performance record
+
+**Follow-ups.**
+- How is a seeded item kept indistinguishable from real output, and who audits that
+- What happened to the last validator whose rate fell
+- Which classes were promoted to GITL since the program started, and what did catch rate do across each promotion
+- Who decides which work is reserved, and when was the list last reviewed
+
+**Verification.** From placement and outcome records alone, compute the catch rate for each validator over the last 30 days. Any validator with no seeded items is a finding. Any validator whose rate cannot be computed from records is a finding. Compare each validator's median decision time (Item 7) against the time needed to read the request. Pick one skills reservation and find the record of the last time the reserved work was performed by the named role; absence is a finding. Attempt the reserved action class under the agent's identity in staging and confirm the PDP denies it and the denial carries the register entry (Item 13).
+
+Score: ___ Notes: ___
+
+---
+
 ## Findings register
 
-| ID | Item | Score | Finding | Severity | Owner | Remediation | Retest date |
-|---|---|---|---|---|---|---|---|
-| F-01 | | | | | | | |
-| F-02 | | | | | | | |
+| ID | Item | Score | Gap type | Finding | Severity | Owner | Planned closure | Retest date |
+|---|---|---|---|---|---|---|---|---|
+| F-01 | | | | | | | | |
+| F-02 | | | | | | | | |
 
-Severity guide. Critical for any gating item at 0 or 1. High for any gating item at 2, or any non-gating item at 0. Medium for non-gating items at 1 or 2. Low for a 3 that lacks infrastructure enforcement.
+Severity guide. Critical for any gating item at 0 or 1. High for any gating item at 2, or any non-gating item at 0. Medium for non-gating items at 1 or 2. Low for a 3 that lacks infrastructure enforcement. A Not assessable gating item is treated as Critical until the evidence is produced.
 
 ## Summary
 
@@ -525,8 +612,26 @@ Severity guide. Critical for any gating item at 0 or 1. High for any gating item
 | 10. Tool integrity | No | |
 | 11. Dependency record | No | |
 | 12. Retirement | No | |
+| 13. Decision rights | Yes | |
+| 14. Validator competence | No | |
 
-Production approval requires every gating item at 3 or above and no Critical findings open.
+Report the result as three figures and three counts, never as a total or an average.
+
+| Figure | Definition | Count of 14 |
+|---|---|---|
+| Strict | Items at 3 or 4 | |
+| Documented | Strict, plus items at 2 whose gap types are Document or Measure only | |
+| Provisional | Items at 2 or above, whatever the gap type | |
+
+| Count | Definition | Count of 14 |
+|---|---|---|
+| Foothold | Items at 2 or above | |
+| Absent | Items at 0 or 1 | |
+| Unknown | Items marked Not assessable | |
+
+The distance from strict to documented is what the organization could score by writing down and measuring what it already does, with no change to a control. The distance from documented to provisional is the engineering backlog. Attackers find the item that is absent, and a total hides it.
+
+Production approval requires every gating item at 3 or above, no gating item Not assessable, and no Critical findings open.
 
 Reviewer: ___ Date: ___ System: ___ Version reviewed: ___
 Accountable owner: ___ Sign-off: ___
