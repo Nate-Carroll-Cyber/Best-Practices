@@ -98,6 +98,7 @@ Every production agent must maintain:
 - AIBOM with declared scope and completeness claim (§10), carrying model, software, data, and prompt provenance
 - Security and privacy test results
 - Human-oversight and escalation procedures
+- Decision-rights register mapping every automated action class to HITL or GITL with a named owner per entry, including the skills reservations (§8)
 - Incident-response and recovery plans
 - Control evidence and residual-risk decisions
 - Versioned change and approval history
@@ -364,7 +365,7 @@ The broker:
 - Enforces a per-task volume budget on records and bytes read, written, and sent, bound to the declared task at issuance. Exceeding the budget stops the run; it is a limit under §5.3, not a signal under §9.3
 - Bounds task shape as well as task volume. Cap recursion depth, chain length, delegation fan-out, and per-task compute and wall-clock budget, with timeouts on long-running operations. Apply backpressure and queue limits at the boundary so a burst degrades service rather than stalling the workflow, and reject malformed, oversized, and missing-field requests before they reach model or tool execution. A broker that gates every action but bounds none of them is exhaustible by legitimate-looking work
 - Requires an idempotency key on every consequential operation and rejects or safely replays a duplicate rather than re-executing it. Neither the underlying transport nor most tool implementations supply this, so a retried, replayed, or duplicated request will otherwise take effect twice
-- Obtains bound human approval where required
+- Obtains bound human approval where the action class is HITL in the decision-rights register (§8), and runs GITL classes without per-action approval under monitoring, audit, and the class-scoped kill switch, recording the register entry version on every such decision
 - Issues task-scoped credentials
 - Executes in the required isolation boundary
 - Validates and classifies results
@@ -389,7 +390,7 @@ Independent containment mechanisms must be able to reject actions, revoke creden
 
 Example trigger conditions: error-rate spikes, probable infinite loops (excessive loop depth), resource exhaustion, anomalous tool-call volume, repeated unauthorized tool access, and detected prompt-injection attempts.
 
-Automatic recovery (a half-open retry) may be used for low-risk, idempotent operations. Breakers involving privileged, destructive, financial, safety-critical, or externally visible actions **remain latched** until an authorized operator reviews and resets them. Recovery tests must use non-destructive synthetic actions.
+Automatic recovery (a half-open retry) may be used for low-risk, idempotent operations. Breakers involving privileged, destructive, financial, safety-critical, or externally visible actions **remain latched** until an authorized operator reviews and resets them. Recovery tests must use non-destructive synthetic actions. A breaker tripped by an action class running as GITL latches for the whole class, and the incident demotes the class to HITL in the decision-rights register until its owner re-earns promotion under §8.
 
 Containment must extend to infrastructure, not only to sessions. An authorized operator must be able to disable a specific tool server, revoke its credentials, and cut its network reachability within minutes, without waiting on a deployment cycle (§4.6).
 
@@ -714,11 +715,19 @@ Maintain a **trifecta scorecard** for every production agent and workflow: answe
 
 High-impact, irreversible, externally visible, or security-sensitive actions require explicit human approval unless a documented assessment permits bounded automation. Typical always-approve actions: permanent deletion, fund transfers, permission changes, PII access/disclosure, and production modification.
 
+**The documented assessment is the decision-rights register.** Every class of automated action the agent or its tooling can execute has one entry, marked HITL (a named person approves each action) or GITL (governance-in-the-loop, where the class is pre-approved and runs under monitoring, audit, and a tested kill switch while humans supervise outcomes), with a named owner per entry. No action class goes live without an entry, and the broker routes from the register (§5.2). A class may be marked GITL only when it passes four tests. The action can be undone. It does not interrupt a production service, where isolating one endpoint or disabling one account is not an interruption. Nobody outside the organization observes it. It is not itself a reportable event and does not alter records attested to a regulator. A class that fails any one test stays HITL. Deleting backups, shortening retention, disabling immutability, any action that reduces recoverability, and containment on OT and safety-relevant systems are permanent HITL entries that no evidence promotes. The always-approve list above is the minimum set of permanent entries.
+
+**GITL status is earned and lost on evidence.** A class is promoted from HITL to GITL by its owner only after it has run for a defined observation period, one quarter by default, with the share of its actions later reversed as mistakes below a ceiling the register states. Any incident caused by a GITL class demotes it to HITL (§5.3), and a reversal rate crossing the ceiling automatically reopens the entry for review (§9.3). The register is under change control, a change to any entry is itself an approval-bound consequential action under this section, and an agent never writes to it. Each entry records the four-test result, the owner, the current mode, the reversal ceiling, the observation window, and the promotion and demotion history, so an assessor can see from the register alone why a class runs without a person.
+
+**The register also carries skills reservations.** A skills reservation names work the organization keeps human-performed on purpose, even where an agent could do it, because validators who never perform the work lose the judgment needed to check it. Each reservation names the task, the role that performs it, the cadence, and a review date, and the agent is denied that action class on the same terms as a HITL entry. The precedent is aviation's required manual-flight practice under automation.
+
 **Which actions reach a human is set by policy, never by the agent.** The broker routes by action class, target, and data classification. Model-stated confidence is not a routing input, since an agent that chooses what a reviewer sees controls its own oversight. Each approval record states whether review was mandated by policy or raised at the agent's discretion, and approval rates are reported for the two separately.
 
 Approval requests must show: the exact action, target, and material parameters; data accessed or disclosed; expected impact and reversibility; agent and initiating principal; the policy decision and relevant warnings; an expiration time; and the recovery/rollback mechanism. The request as displayed, including the rule that triggered review and the agent's recommendation with the evidence it cited, is retained with the decision (§9.1), so a later reviewer sees what the approver saw.
 
 **Bind approval cryptographically to a canonical representation of the proposed action.** Any change to the action, target, parameters, data classification, agent identity, or policy version invalidates the approval. **Reauthorize immediately before execution** to prevent time-of-check/time-of-use (TOCTOU) failures.
+
+**Validator competence is measured, not assumed.** Plant known errors into the stream of agent output each human validator reviews (a wrong finding, a flawed patch, a fabricated citation, an out-of-scope action presented as routine) at a rate the validator cannot predict, and record whether each was caught. Report the catch rate per validator and per action class as a §9.3 signal; a falling rate triggers review and retraining, and the rate must hold or improve as the register moves classes from HITL to GITL, since each promotion raises what the remaining human reviews must catch. The seeded items are generated outside the agent runtime and never disclosed to it, and a seeded error that reaches production because a validator passed it is handled as an incident of the validation path, not of the agent.
 
 Critical actions may require multiple independent approvers and phishing-resistant authentication. **The approval path verifies the approver's authority, not only their identity.** At decision time it checks the approver's current role against the action class and data classification in the identity system and rejects an approval from outside that scope. The approval record carries the role checked and the result. Approval timeouts and system failures default to **denial**. All approval decisions are recorded in the audit trail with approver identity, decision, timestamp, and signature.
 
@@ -732,7 +741,7 @@ Freezes, approval requirements, and other critical constraints are **authorizati
 
 Security-relevant events must record: authenticated agent and initiating principal; the agent's registry identifier where the runtime supplies one (§4.1); tenant, session, task, and trace identifiers; requested action and target; policy decision and policy version; the permission mode in force where the runtime has one (§5.2); human-approval evidence; tool identity, version, and execution boundary; input/output references, classifications, or approved hashes; outcome, timing, and error category; and sequence/integrity metadata. Include the signing key identifier (`key_id`) in every record so that records remain attributable across key rotations.
 
-Records must also carry the correlation identifier (§6.5.2), the resolved model identifier and version (§7.7), and the `mock_mode` state of any executed tool, so that an audit record establishes whether an action actually took effect. Intent extensions (§7.8) and session refusals at capability declaration (§5.2) are security-relevant events and are recorded on the same terms. Human-approval evidence comprises the approver's identity, the role checked and the result, whether review was mandated or discretionary, the rule that triggered it, the request as displayed, and the times of display and decision (§8). Permission-mode changes are recorded with previous mode, new mode, and trigger (§5.2), and handoff payload hashes at send and receipt are recorded where the runtime surfaces handoffs (§4.2).
+Records must also carry the correlation identifier (§6.5.2), the resolved model identifier and version (§7.7), and the `mock_mode` state of any executed tool, so that an audit record establishes whether an action actually took effect. Intent extensions (§7.8) and session refusals at capability declaration (§5.2) are security-relevant events and are recorded on the same terms. Human-approval evidence comprises the approver's identity, the role checked and the result, whether review was mandated or discretionary, the rule that triggered it, the request as displayed, and the times of display and decision (§8). Every record carries the decision-rights register entry and its version under which the action ran, so a GITL action is attributable to the pre-approval that permitted it and a HITL action to its approver (§8). Permission-mode changes are recorded with previous mode, new mode, and trigger (§5.2), and handoff payload hashes at send and receipt are recorded where the runtime surfaces handoffs (§4.2).
 
 Capture enough to reconstruct intent changes and external communication — prompt and context deltas, and network events, not only tool calls — while applying minimization and masking. **The log store must not become a new sensitive-data store.** Mask credentials and personal data in payloads at write time; an audit pipeline that faithfully records everything an agent saw has recreated the exposure it was built to detect, inside a system with broader read access. Set retention long enough to support forensic reconstruction and applicable compliance obligations, and record the retention decision and its owner. Tier payload detail and retention by action class. High-impact and irreversible actions keep full payload references for the longest period, and routine actions may keep sampled payloads or a shorter one. Broker decision records, approval records, and identity fields are never sampled, since §9.5 corroboration depends on a complete stream.
 
@@ -775,7 +784,8 @@ Platform and host signals:
 - Repeated failure to progress against a declared objective, which predicts scope violation. An agent that cannot complete a task within its stated constraints resorts to methods outside them, so persistent non-progress is an early signal rather than a performance metric (§5.2).
 - Anomalies from auxiliary models in the pipeline, including summarisers, rerankers, classifiers, and translation or redaction services. A refusal, an error, or an unexpected output from a secondary model that processes the primary agent's content is evidence about the primary agent and is routed to the security team rather than discarded as a pipeline fault.
 - Human dismissal of an automated detection. An approver overriding a flag is a decision with an author, recorded under §9.1 with its justification, and reviewed in aggregate. Flags written off individually as false positives are how known-bad conditions persist.
-- Approval without scrutiny. Track per approver and per agent the time from request display to decision, the approval rate over time, and the override rate (§8). A decision faster than the request can be read, an approval rate climbing toward 100 percent, or an agent whose discretionary escalations fall while its workload holds is reviewed by someone other than the approver.
+- Approval without scrutiny. Track per approver and per agent the time from request display to decision, the approval rate over time, the override rate, and the seeded-error catch rate (§8). A decision faster than the request can be read, an approval rate climbing toward 100 percent, a catch rate falling below the validator's own baseline, or an agent whose discretionary escalations fall while its workload holds is reviewed by someone other than the approver.
+- Reversal rate per GITL action class. Count, over the register's observation window, the actions in each class later reversed as mistakes, and compare against the ceiling the entry states (§8). A rate above the ceiling reopens the entry automatically, and a GITL class whose reversals are not being counted is treated as unmeasured and reverts to HITL, since an unmeasured ceiling is no ceiling.
 
 Establish a **common platform monitoring baseline** across every environment hosting agent workloads, covering IAM events, network-path changes, and control-plane activity, separate from the agent's own action records. Action records show what the agent did through sanctioned interfaces; platform telemetry shows what happened around them, including attacks on the enforcement points themselves (§9.5).
 
@@ -792,6 +802,8 @@ Incident scoping starts from the AIBOM revision in force at the earliest credibl
 During forensic reconstruction, treat the agent-authored record stream as one input among several; reconcile it against the independently authored streams in §9.5 before drawing conclusions about events inside the compromise window.
 
 Exercise concrete compromise scenarios rather than reviewing the plan on paper: who is paged, which store holds the relevant logs, who is authorized to activate the kill switch, and how long disabling a specific tool server actually takes. Each of these is a question that cannot be answered quickly under pressure, so it must be answered beforehand.
+
+An incident caused by an action class running as GITL demotes the class to HITL in the decision-rights register as part of containment, before root-cause analysis, and the owner re-earns promotion on the §8 evidence rule rather than by re-approval.
 
 Broker unavailability is an incident, not an outage. The runbook covers who is paged, how affected agents are confirmed halted rather than assumed halted, and how the broker is restored from a known-good state before any agent resumes.
 
@@ -982,6 +994,10 @@ Validation must also include **control-environment attack**: the assumption that
 - A release with a missing AIBOM, one incomplete for its tier, or a stale one is blocked at promotion (§10.5).
 - A simulated supplier alias repoint is detected through the resolved model identifier (§7.7) and raises an AIBOM regeneration trigger.
 - A workload-identity attempt to write or modify the AIBOM is denied.
+- An action whose class is HITL in the decision-rights register cannot complete without an approval record, and an action whose class has no register entry is denied.
+- A GITL action completes without per-action approval and its decision record carries the register entry version; a register entry marked GITL that fails any of the four tests in §8 is rejected at validation.
+- An agent-originated write to the decision-rights register, and an action in a skills-reservation class proposed by an agent, are each denied and logged.
+- A seeded error placed in a validator's queue is recorded with whether it was caught, and the per-validator catch rate is computable from records alone.
 
 **Control-environment attack cases.** Run these against the enforcement point itself, not against the agent:
 
@@ -1006,6 +1022,7 @@ Validation must also include **control-environment attack**: the assumption that
 - Search public code hosts, model hubs, package registries, and paste services for tokens attributable to the organization (§4.5). Revoke every match.
 - For two or three production agents, answer from records alone which model version is running, what it was trained or fine-tuned on, who the upstream supplier is, and what the license permits (§10). Every unanswerable question is a finding.
 - For the last 30 days of approvals, answer from records alone who approved each, what role was checked, whether review was mandated or discretionary, and how long the request was displayed before the decision (§8, §9.1). Every unanswerable field is a finding, and any approver with a median decision time under the time needed to read the request is a finding.
+- For the last 30 days, list from records alone every automated action class that executed without per-action approval and match each to its decision-rights register entry, mode, owner, and reversal rate (§8, §9.3). A class with no entry is a critical finding, a GITL class with no measured reversal rate is a finding, and a period with no seeded errors placed before any validator is a finding.
 
 Measure detection rate, false-positive rate, unsafe-action completion rate, correct-escalation rate, containment time, and recovery time. **Test complete sessions and realistic action sequences, not only isolated prompts.** Red teaming should be conducted by an independent team whose test design the agent cannot influence.
 
@@ -1015,7 +1032,7 @@ Measure detection rate, false-positive rate, unsafe-action completion rate, corr
 
 An agent must not enter or remain in production with an unresolved **critical** vulnerability or an unaccepted **high-severity** vulnerability affecting authorization, isolation, data protection, or privileged tool use.
 
-Production approval requires: documented remediation and regression testing; representative adversarial testing; verified policy enforcement and emergency controls; a current AIBOM meeting the minimum for the system's classification tier (§10.5); operational monitoring and response readiness; privacy and legal review where applicable; documented residual risk and a named risk owner; time-bounded, approved exceptions where policy permits; and security and business-owner sign-off.
+Production approval requires: documented remediation and regression testing; representative adversarial testing; verified policy enforcement and emergency controls; a current AIBOM meeting the minimum for the system's classification tier (§10.5); a decision-rights register entry for every automated action class the agent can execute, with permanent HITL entries in place (§8); operational monitoring and response readiness; privacy and legal review where applicable; documented residual risk and a named risk owner; time-bounded, approved exceptions where policy permits; and security and business-owner sign-off.
 
 Example blocking decision:
 
@@ -1031,9 +1048,9 @@ Advancement is **evidence-based, not time-based**. A fixed number of operating h
 
 **Phase 2 — Internal Staging:** production-like isolation and monitoring; narrow internal use cases; limited, reversible writes; human approval for consequential actions; incident-response exercise completed.
 
-**Phase 3 — Limited Production:** defined user cohort and use cases; bounded tools, destinations, and data; enhanced monitoring and daily review; tested rollback and kill switch; explicit go/no-go criteria.
+**Phase 3 — Limited Production:** defined user cohort and use cases; bounded tools, destinations, and data; enhanced monitoring and daily review; tested rollback and kill switch; explicit go/no-go criteria; every action class HITL in the decision-rights register, with reversal counting running so the observation window for promotion starts here (§8).
 
-**Phase 4 — General Production:** scale only within validated boundaries; continuous control evidence and testing; periodic access and tool recertification; change-triggered reassessment; documented decommissioning and data-deletion plan executed through the retirement exit checks in §4.6, with the AIBOM revision history preserved after retirement (§10.5).
+**Phase 4 — General Production:** scale only within validated boundaries; promotion of action classes from HITL to GITL only through the register's evidence rule, never by phase transition (§8); continuous control evidence and testing; periodic access and tool recertification; change-triggered reassessment; documented decommissioning and data-deletion plan executed through the retirement exit checks in §4.6, with the AIBOM revision history preserved after retirement (§10.5).
 
 Each transition requires security, operations, product, and compliance sign-off plus a tested rollback plan.
 
@@ -1093,8 +1110,14 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Memory drift | Memory growth and change baselined per agent | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Delegation integrity | Handoff payload hash at send and receipt, or a declared and owned gap | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Evidence completeness | Payload tiered by action class with decision records unsampled | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Oversight governance | Decision-rights register with four-test GITL admission and evidence-based promotion and demotion | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Validator competence | Skills reservations enforced and seeded-error catch rate measured per validator | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 
 Allowed statuses: `Not assessed`, `Planned`, `Partial`, `Implemented`, `Verified`, `Exception approved`. If coverage percentages are used, document the scoring method, evidence standard, treatment of partial controls, and independent-validation process.
+
+Every `Partial` carries one or more gap types so the table separates paperwork from engineering. `Document` means the control operates across its scope and only the named artifact (register, owner, procedure, export) is missing. `Measure` means the control operates and its inputs exist but the figure the row asks for has not been computed. `Scope` means the control operates in part of its scope and not another, named part, and an unverified part counts as uncovered. `Control` means the mechanism is absent, misconfigured, or produces the wrong outcome where observed. `Planned` records an owner and a closure date no more than 180 days out for a funded, scheduled plan and carries no scoring weight.
+
+Report coverage as three figures and three counts, never as an average. The strict figure counts only `Verified` rows. The documented figure adds `Partial` rows whose gap types are `Document` or `Measure` only, and states what the program would score by writing down and measuring what it already does with no change to a control. The provisional figure adds every remaining `Partial`, and the distance from documented to provisional is the engineering backlog. Beneath the figures, report the count of rows with a foothold (`Implemented`, `Verified`, or `Partial`), the count absent (`Planned` or not in place), and the count unknown (`Not assessed`), since an attacker needs the one row that is absent and an average hides it. `Verified` at any row requires a produced artifact, export, configuration, test record, or drill record; interview evidence alone caps a row at `Implemented`.
 
 ---
 
@@ -1154,6 +1177,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Explicit scope-setting instructions stating prohibited actions, phrased as rules rather than environmental claims (§7.8)
 - Reasoning traces excluded from training and fine-tuning data, verified by test (§9.2)
 - Reasoning-trace retention or logging as security evidence for all workloads where the platform exposes traces (§9.2)
+- A decision-rights register with an entry for every automated action class, permanent HITL entries in place, and no GITL promotion before the observation window closes (§8)
 - Threat modeling and a passed production security gate
 
 *Classification-triggered (§2.1)*
@@ -1180,6 +1204,9 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Compaction preserving security determinations, with pre-compaction state retained for review (§7.1, §9.4)
 - Auxiliary-model anomaly routing and approver-override review (§9.3)
 - Approval-pattern review per approver and per agent, with mandated and discretionary reviews reported separately (§8, §9.3)
+- Seeded-error audits with catch rate per validator, and skills reservations recorded and enforced (§8, §9.3)
+- Reversal rate measured per GITL action class against a stated ceiling, with automatic reopening (§8, §9.3)
+- Coverage reported as strict, documented, and provisional figures with gap-typed partials (§14)
 - Renewed consent when a connected server changes capabilities or data access (§6.4)
 - Inventory-linked CVE and advisory tracking with maintenance-status verification (§10)
 - Differential discovery scanning for relocated and modified services (§4.6)
@@ -1236,14 +1263,17 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Cross-run collective:** Independent agent runs that share capabilities, credentials, or data through external channels and thereby persist beyond any single session (§9.3, §9.4).
 - **Cross-stream corroboration:** Reconciling the agent-authored audit stream against independently authored record streams (broker decisions, KMS/CSP logs, tool-side logs, network telemetry) that the agent runtime cannot write; the required control for reconstructing events during a live compromise.
 - **Differential discovery:** Comparing successive infrastructure scans against each other rather than only against the registry, so services that relocate or change between scans are surfaced (§4.6).
+- **Decision-rights register:** The change-controlled record mapping every automated action class to HITL or GITL with a named owner, the four-test result, a reversal ceiling, an observation window, and promotion and demotion history; the source the broker routes from and the record skills reservations live in (§8).
 - **DEFER:** A broker disposition for a concern that cannot be resolved synchronously, with a bounded resolution window and a timeout that resolves to DENY; distinct from a human approval request (§5.2).
 - **DID:** Decentralized Identifier (W3C); requires a method defining issuance, resolution, rotation, and revocation.
 - **DPoP:** Demonstrating Proof of Possession; binds token use to a key.
 - **Error envelope:** The single canonical error shape emitted by every component (§6.5.2), comprising a stable code, generic message, enumerated remediation hint, escalation flag, correlation identifier, and timestamp.
 - **Escalation mode:** Whether a human review was mandated by policy or raised at the agent's discretion; recorded on every approval and reported separately, since discretionary escalation lets the agent select what a reviewer sees (§8).
 - **Evaluation awareness:** A system's inference that it is being tested rather than deployed; correlated with behavioral divergence, and a limit on how far evaluation results generalize to production (§11).
+- **Gap type:** The reason a coverage row is `Partial`, one or more of `Document`, `Measure`, `Scope`, or `Control`; determines whether the row counts toward the documented figure (§14).
+- **GITL:** Governance-in-the-loop. An action class pre-approved to run without per-action human approval under monitoring, audit, and a tested kill switch, admitted only when reversible, non-disruptive, not externally visible, and not subject to regulatory attestation, and demoted on incident (§8).
 - **Fail closed:** The property that a timeout, exception, or missing configuration produces a denial or a refusal to start, never a permit or an unauthenticated service.
-- **HITL:** Human-in-the-loop review or approval for defined actions.
+- **HITL:** Human-in-the-loop. A named person approves each action in the class before it runs; the default mode for every register entry and the permanent mode for entries no evidence promotes (§8).
 - **Idempotency key:** A caller-supplied identifier that lets the broker recognize a duplicated or replayed consequential request and decline to execute it a second time (§5.2).
 - **Intent anchoring:** Holding the user's original objective in trusted, structurally separate system instructions and validating that proposed actions still serve it (§7.8).
 - **Internal mirror:** The organization-operated registry through which every dependency, image, and model artifact is resolved; the single validation and egress point for third-party artifacts (§10).
@@ -1258,10 +1288,13 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Policy decision point (PDP):** Evaluates an action against authorization policy.
 - **Policy enforcement point (PEP):** Permits, denies, or constrains execution based on a policy decision.
 - **Proof of possession:** Cryptographic evidence that a caller holds the key to which a credential is bound.
+- **Reversal rate:** The share of a GITL class's actions later reversed as mistakes over the register's observation window; the evidence that promotes a class and the signal that reopens it (§8, §9.3).
 - **Resource indicator:** An OAuth parameter (RFC 8707) binding a token to its intended target server, preventing replay against a different resource.
+- **Seeded-error audit:** Known errors planted in the output a human validator reviews, generated outside the agent runtime, with catch rate per validator reported as a monitoring signal (§8, §9.3).
 - **Self-verifying identity (anti-pattern):** An identity or audit scheme in which issuance, signing, and verification reside in the same process or trust domain, or a symmetric scheme in which verifiers can forge; provides cryptographic structure without a trust boundary.
 - **Monitor-as-target:** The condition in which a guardrail's verdict feeds a reward, score, or selection pressure, so the workload is trained to evade it and violations become more covert rather than less frequent (§7.8).
 - **Shadow server:** A tool or MCP server running outside the registry — unregistered, unowned, unmonitored, and absent from the inventory consulted during an incident (§4.6).
+- **Skills reservation:** Work deliberately kept human-performed, recorded in the decision-rights register with task, role, cadence, and review date, so validator judgment is maintained while agents absorb adjacent work (§8).
 - **SPIFFE/SPIRE:** Standard and runtime for securely identifying software workloads.
 - **TOCTOU:** Time-of-check/time-of-use; the gap between approval and execution that must be closed by re-authorization.
 - **TOFU:** Trust on first use; pinning an artifact or schema at first observation and alerting on later change. A fallback where signature verification is unavailable, not an equivalent to it.
@@ -1296,6 +1329,7 @@ Maintain dated references to the authoritative versions the organization actuall
 - Post-incident technical reports on agentic and research-workload compromises, including evaluation-environment incidents published by AI developers and national AI safety or security institutes (record publisher, date, and the controls each informed)
 - Published research on reward hacking, evaluation awareness, and misalignment generalization, as evidence about the limits of behavioral audits (§11)
 - Srikumar, M., Mibuari, E., Leibowicz, C., et al., The Observability Gap in AI Agents: What to Fix Before Agents Scale (Partnership on AI, September 2026), as evidence on what agent runtimes do and do not emit; its per-framework findings are a documentation review dated May 2026 and are point-in-time
+- Cloud Security Alliance, Frontier Ready Assessment Framework, Version 1.0 public edition (2 October 2026), as the source of the decision-rights register and its four GITL tests, skills reservations, seeded-error audits, and the strict, provisional, and documented scoring with gap-typed partials (§8, §9.3, §14); the public edition carries the maturity grid and scoring rules only, and its control objectives were not reviewed. Its own cited precedents are ITIL standard-change practice for pre-approved change classes and GAO-05-457 on the TSA Threat Image Projection program for seeded testing
 - The current OpenTelemetry semantic conventions for generative AI, where agent telemetry is encoded in them; the conventions were in development status as of the Partnership on AI review, so verify the current release and attribute names before building against them (§6.6)
 
 ---
@@ -1308,8 +1342,10 @@ Secure agentic AI requires independently enforced controls **around** the model.
 
 ## Version History
 
-**Version:** Consolidated 2.10
+**Version:** Consolidated 2.11
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
+
+**Changes from 2.10:** decision-rights register added as a required governance artifact (§2.3) and defined in §8 with the four GITL admission tests, permanent HITL entries, evidence-based promotion after an observation period and demotion on incident, register change control with agent writes denied, and skills reservations; broker routes HITL and GITL from the register and records the entry version (§5.2, §9.1); class-wide breaker latch and demotion on a GITL incident (§5.3, §9.4); seeded-error audits with catch rate per validator (§8); catch rate and per-class reversal rate added as monitoring signals, with unmeasured GITL reverting to HITL (§9.3); four new regression tests and one verification probe (§11); register entry required at the production gate (§12); Phase 3 all-HITL with reversal counting and Phase 4 promotion by evidence only (§13); gap-typed partials, the 180-day planned marker, and strict, documented, and provisional coverage figures with foothold, absent, and unknown counts (§14); two new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for decision-rights register, gap type, GITL, reversal rate, seeded-error audit, and skills reservation, with HITL revised (§17); reference addition (§18). Sourced from Cloud Security Alliance, Frontier Ready Assessment Framework v1.0 public edition (2 October 2026).
 
 **Changes from 2.9.2:** per-agent registry identifier separate from workload identity, when supported (§4.1, §10.3); handoff payload hash at send and receipt, when supported (§4.2); permission-mode change as a consequential action with agent-triggered changes denied, when supported (§5.2); memory writes classified by destination (§5.2); capability declaration extended to sub-agent identity, permission-mode reporting, and handoff surfacing, with each unsupported item recorded as an owned AIBOM gap (§5.2, §10.2); memory entry scope, causal link, and as-of reconstruction (§7.4); escalation routed by policy with model-stated confidence excluded, approver authority verified at decision time, and the request as displayed retained (§8); audit record fields for registry identifier, permission mode, approval evidence, and handoff hashes, with payload tiering that never samples decision, approval, or identity records (§9.1); memory growth, agent-attempted permission-mode change, and approval without scrutiny added as monitoring signals (§9.3); nine new regression tests and one verification probe (§11); eight new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for agent registry identifier, escalation mode, memory scope, and permission mode (§17); reference additions (§18). Sourced from Partnership on AI, The Observability Gap in AI Agents: What to Fix Before Agents Scale (September 2026).
 
@@ -1325,4 +1361,4 @@ Secure agentic AI requires independently enforced controls **around** the model.
 **Changes from 2.2 (delivered in 2.3):** sixth governing principle on capability combinations; trifecta added to system classification (§2.1); server-side authorization decisions, OAuth 2.1, and resource-indicator token binding (§4.3); server registration and shadow discovery (§4.6); per-server kill switch (§5.3); OAuth client/authorization-server role separation (§6.3); infrastructure-enforced tenant isolation and ingestion-time classification (§7.4); intent integrity and the capability trifecta (§7.8); log-store minimization and retention (§9.1); SIEM/XDR integration and three new monitoring signals (§9.3); compromise-scenario drills (§9.4); tenant-isolation and telemetry tests plus verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
 **Changes from 2.1 (delivered in 2.2):** secret custody and model-context exclusion, and untrusted project configuration (§4.5); local-transport binding and origin validation (§6.2); full-schema metadata scanning, display-control stripping, and TOFU pinning (§6.4); error design (§6.5); service surface hardening baseline (§6.7); safe command and process execution (§7.6); model invocation guardrails (§7.7).
 
-**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.10 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
+**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.11 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
