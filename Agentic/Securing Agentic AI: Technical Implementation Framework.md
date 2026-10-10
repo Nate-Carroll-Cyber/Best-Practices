@@ -225,6 +225,7 @@ Default-deny egress is necessary but not sufficient on its own. Four properties 
 - Keep mutable roles and capabilities in the **authorization system**, not baked into identity certificates. Embedding permissions in a cert forces reissuance on every permission change and couples identity to policy.
 - If decentralized identifiers (DIDs) are used, select or define a DID method with documented issuance, resolution, rotation, recovery, and revocation.
 - Automate certificate and key rotation, revocation, and compromise response.
+- **When supported, every agent and sub-agent carries its own registry identifier, separate from the workload identity it runs under.** A workload identity names the process, so sub-agents sharing a process share one identity and a substituted sub-agent inherits the name of the one it replaced. The identifier persists across runs, maps to exactly one agent, and resolves to the §4.6 registry entry and the AIBOM component version approved for it (§10.3). The broker stamps it on every decision record (§9.1). Where the runtime cannot expose sub-agents individually, it declares that at session start (§5.2), the gap is recorded in the AIBOM with a named owner (§10.2), and actions are attributed to the workload.
 
 **Prohibited anti-patterns:** shared service accounts across agents; generic identities (`agent-1`, `automation-bot`); long-lived static API keys or bearer tokens as primary agent credentials; capability lists embedded in certificate SANs; **symmetric-key (HMAC) signing of audit or attestation records, where any authorized verifier can also forge; and self-verifying identity, where issuance, signing, and verification reside in the same process or trust domain.** With symmetric schemes, verification capability equals forgery capability, so no non-repudiation exists. Use asymmetric signing with verifiers that hold only public material and validate a trust chain to an independent authority.
 
@@ -246,6 +247,7 @@ Delegation must satisfy all of the following:
 - Maximum delegation depth and fan-out are enforced.
 - Child credentials and sessions terminate with the task or parent unless explicitly and safely re-parented. Orphaned agents are prohibited.
 - Policy is re-evaluated at every delegation and tool boundary.
+- When supported, the broker records a hash of the handoff payload at send and at receipt and treats a mismatch as a stop condition. Where handoffs stay inside one process and never reach the broker, the runtime declares that at session start and the gap is recorded (§5.2, §10.2).
 
 Review **cumulative** effective permissions per agent identity, not only individual grants. Scope creep is usually additive and individually defensible; it is visible only in aggregate. Remove write and delete capability unless a specific declared task requires it, and re-justify what remains at each recertification (§16, Priority 2).
 
@@ -348,7 +350,11 @@ Agents must not run with root, administrator, or unrestricted `sudo` privileges 
 
 ### 5.2 Tool Execution Broker
 
-All consequential actions pass through a deterministic enforcement broker (policy-decision + policy-enforcement point). Consequential actions include tool calls, memory writes, memory and knowledge retrieval, context compaction, subagent start and stop, skill or tool registration, and any write to a location another run can read. A memory write is persistence, a subagent start is delegation under §4.2, and compaction is where provenance markers are lost under §7.1; each receives its own policy decision. The broker:
+All consequential actions pass through a deterministic enforcement broker (policy-decision + policy-enforcement point). Consequential actions include tool calls, memory writes, memory and knowledge retrieval, context compaction, subagent start and stop, skill or tool registration, and any write to a location another run can read. A memory write is persistence, a subagent start is delegation under §4.2, and compaction is where provenance markers are lost under §7.1; each receives its own policy decision. **A write is classified by its destination, not by the tool that made it.** A file, database row, or index entry that a later session loads as context is a memory write even when it arrives through an ordinary file or shell tool, and it receives the memory-write decision and the §7.4 record.
+
+**When supported, a change to the session-wide permission mode is a consequential action.** A change toward less approval requires an approver under §8, and a change triggered by the agent is denied. The record carries the previous mode, the new mode, and the trigger (operator, administrator setting, or agent), and every action record carries the mode in force when it ran (§9.1). Where the runtime has no session-wide mode or cannot report changes, approval requirements are pinned per tool under change control (§4.5) and the gap is declared at session start.
+
+The broker:
 
 - Authenticates the initiating principal and agent
 - Validates the tool and its pinned version
@@ -364,7 +370,7 @@ All consequential actions pass through a deterministic enforcement broker (polic
 - Validates and classifies results
 - Records the decision and outcome
 - Treats any write to a location another run can read (public repositories, model hubs, package registries, paste services, webhooks, shared buckets) as a consequential action requiring its own policy decision and, by default, human approval under §8
-- Requires a capability declaration from the agent runtime at session start, before any content-bearing action, and refuses the session when the runtime cannot supply what policy requires (provenance labels, correlation identifiers, signed envelopes). A runtime that cannot be governed is refused before it runs, not denied at its first consequential call
+- Requires a capability declaration from the agent runtime at session start, before any content-bearing action, and refuses the session when the runtime cannot supply what policy requires (provenance labels, correlation identifiers, signed envelopes). A runtime that cannot be governed is refused before it runs, not denied at its first consequential call. The declaration also states whether the runtime can identify sub-agents individually (§4.1), report permission-mode changes, and surface in-process handoffs (§4.2). Each of these it cannot supply is recorded as a gap in the AIBOM with a named owner (§10.2) and never passes silently
 - Confirms before the session starts that the declared objective is achievable within the declared constraints, with the tools, scopes, and targets actually granted. An unsatisfiable task is a security condition, not a productivity problem: an agent that cannot succeed within its constraints reaches outside them, and scope violations concentrate in workloads whose objective and permissions do not match. Where feasibility cannot be established in advance, bound the run and treat repeated failure against the objective as a signal (§9.3)
 - Validates a timestamp within a negotiated skew window, a unique request identifier, and where policy requires a nonce, on every runtime-to-broker request, and rejects replays. The channel between runtime and broker is subject to the same replay controls as the credentials it carries (§4.3)
 - May return DEFER when a concern is raised that cannot be resolved synchronously, with a bounded resolution window and a timeout that resolves to DENY. DEFER is distinct from approve-required, which routes to a human under §8. Cascading deferrals are bounded per session
@@ -630,7 +636,7 @@ Isolate state by tenant, user, agent, and task ("one task, one session"). Tempor
 
 > **On erasure:** ordinary object deletion, garbage collection, `del`, and file removal are **not** cryptographic zeroing. When cryptographic erasure is required, encrypt session data under a per-session key and destroy that key.
 
-Every memory entry must record its authenticated writer, source, tenant, task, creation time, confidence, classification, and expiration (TTL). Separate observed facts, user assertions, model inferences, and executable instructions. Support quarantine, versioning, correction, rollback, and deletion.
+Every memory entry must record its authenticated writer, source, tenant, task, creation time, confidence, classification, expiration (TTL), scope (one case, one task, or all future work), and the correlation identifier of the step that caused the write. An instruction a human gave for one case is stored with case scope and expires with the case, and widening scope is a new write with its own decision (§5.2). Separate observed facts, user assertions, model inferences, and executable instructions. Support quarantine, versioning, correction, rollback, and deletion. Superseded versions are retained so memory as it stood on a given date can be rebuilt for incident review (§9.4).
 
 > **On signed memory:** a signature proves content has not changed since signing; it does **not** prove the content was true or safe when accepted. Validate provenance and trust at write time, not just integrity at read time.
 
@@ -708,11 +714,13 @@ Maintain a **trifecta scorecard** for every production agent and workflow: answe
 
 High-impact, irreversible, externally visible, or security-sensitive actions require explicit human approval unless a documented assessment permits bounded automation. Typical always-approve actions: permanent deletion, fund transfers, permission changes, PII access/disclosure, and production modification.
 
-Approval requests must show: the exact action, target, and material parameters; data accessed or disclosed; expected impact and reversibility; agent and initiating principal; the policy decision and relevant warnings; an expiration time; and the recovery/rollback mechanism.
+**Which actions reach a human is set by policy, never by the agent.** The broker routes by action class, target, and data classification. Model-stated confidence is not a routing input, since an agent that chooses what a reviewer sees controls its own oversight. Each approval record states whether review was mandated by policy or raised at the agent's discretion, and approval rates are reported for the two separately.
+
+Approval requests must show: the exact action, target, and material parameters; data accessed or disclosed; expected impact and reversibility; agent and initiating principal; the policy decision and relevant warnings; an expiration time; and the recovery/rollback mechanism. The request as displayed, including the rule that triggered review and the agent's recommendation with the evidence it cited, is retained with the decision (§9.1), so a later reviewer sees what the approver saw.
 
 **Bind approval cryptographically to a canonical representation of the proposed action.** Any change to the action, target, parameters, data classification, agent identity, or policy version invalidates the approval. **Reauthorize immediately before execution** to prevent time-of-check/time-of-use (TOCTOU) failures.
 
-Critical actions may require multiple independent approvers and phishing-resistant authentication. Approval timeouts and system failures default to **denial**. All approval decisions are recorded in the audit trail with approver identity, decision, timestamp, and signature.
+Critical actions may require multiple independent approvers and phishing-resistant authentication. **The approval path verifies the approver's authority, not only their identity.** At decision time it checks the approver's current role against the action class and data classification in the identity system and rejects an approval from outside that scope. The approval record carries the role checked and the result. Approval timeouts and system failures default to **denial**. All approval decisions are recorded in the audit trail with approver identity, decision, timestamp, and signature.
 
 Freezes, approval requirements, and other critical constraints are **authorization boundaries, not prompt instructions**. A rule that exists only in a system prompt is a suggestion to the model, not a control.
 
@@ -722,11 +730,11 @@ Freezes, approval requirements, and other critical constraints are **authorizati
 
 ### 9.1 Audit Records
 
-Security-relevant events must record: authenticated agent and initiating principal; tenant, session, task, and trace identifiers; requested action and target; policy decision and policy version; human-approval evidence; tool identity, version, and execution boundary; input/output references, classifications, or approved hashes; outcome, timing, and error category; and sequence/integrity metadata. Include the signing key identifier (`key_id`) in every record so that records remain attributable across key rotations.
+Security-relevant events must record: authenticated agent and initiating principal; the agent's registry identifier where the runtime supplies one (§4.1); tenant, session, task, and trace identifiers; requested action and target; policy decision and policy version; the permission mode in force where the runtime has one (§5.2); human-approval evidence; tool identity, version, and execution boundary; input/output references, classifications, or approved hashes; outcome, timing, and error category; and sequence/integrity metadata. Include the signing key identifier (`key_id`) in every record so that records remain attributable across key rotations.
 
-Records must also carry the correlation identifier (§6.5.2), the resolved model identifier and version (§7.7), and the `mock_mode` state of any executed tool, so that an audit record establishes whether an action actually took effect. Intent extensions (§7.8) and session refusals at capability declaration (§5.2) are security-relevant events and are recorded on the same terms.
+Records must also carry the correlation identifier (§6.5.2), the resolved model identifier and version (§7.7), and the `mock_mode` state of any executed tool, so that an audit record establishes whether an action actually took effect. Intent extensions (§7.8) and session refusals at capability declaration (§5.2) are security-relevant events and are recorded on the same terms. Human-approval evidence comprises the approver's identity, the role checked and the result, whether review was mandated or discretionary, the rule that triggered it, the request as displayed, and the times of display and decision (§8). Permission-mode changes are recorded with previous mode, new mode, and trigger (§5.2), and handoff payload hashes at send and receipt are recorded where the runtime surfaces handoffs (§4.2).
 
-Capture enough to reconstruct intent changes and external communication — prompt and context deltas, and network events, not only tool calls — while applying minimization and masking. **The log store must not become a new sensitive-data store.** Mask credentials and personal data in payloads at write time; an audit pipeline that faithfully records everything an agent saw has recreated the exposure it was built to detect, inside a system with broader read access. Set retention long enough to support forensic reconstruction and applicable compliance obligations, and record the retention decision and its owner.
+Capture enough to reconstruct intent changes and external communication — prompt and context deltas, and network events, not only tool calls — while applying minimization and masking. **The log store must not become a new sensitive-data store.** Mask credentials and personal data in payloads at write time; an audit pipeline that faithfully records everything an agent saw has recreated the exposure it was built to detect, inside a system with broader read access. Set retention long enough to support forensic reconstruction and applicable compliance obligations, and record the retention decision and its owner. Tier payload detail and retention by action class. High-impact and irreversible actions keep full payload references for the longest period, and routine actions may keep sampled payloads or a shorter one. Broker decision records, approval records, and identity fields are never sampled, since §9.5 corroboration depends on a complete stream.
 
 > **The initiating principal must be an authenticated claim, not a self-asserted string.** Derive the principal recorded in audit events from a validated identity assertion — an OIDC ID token verified against the identity provider's published keys (issuer, audience, expiry) or an mTLS-bound session assertion — and record the issuer, subject, assertion hash, and binding type. A session whose principal is not assertion-backed must be labeled as self-asserted; its records identify a session, not an accountable human. Retain the assertion hash so records can be correlated against identity-provider logs that the agent runtime cannot author. Assurance limits of this binding are stated in §9.5.
 
@@ -755,16 +763,19 @@ Error-shape and tool-definition signals:
 - The same token presented under two agent identities, or from two network locations (§4.3).
 - Agent connections to endpoints absent from the approved registry (§4.6).
 - Divergence between an agent's stated objective and its action sequence, evaluated outside the agent's own context (§7.8).
+- Memory growth and change per agent. Baseline entry count, write rate, share of entries scoped beyond one case, and share written from untrusted sources, and alert on departures (§7.4). Research cited by Partnership on AI (Al-Tawaha et al., 2026) found unsafe-action rates rise as memory accumulates, visible in memory state before output.
 
 Platform and host signals:
 
 - Attempted or successful creation of an outbound path by a workload identity, including load balancers, private links, tunnels, VPN enrollments, and DNS changes (§3.3). Attempts are signals in their own right; success is an incident.
+- A permission-mode change attempted by the agent, or any change toward less approval with no approver record (§5.2). The attempt is a signal, and a change that took effect without a broker decision is an incident.
 - Use by an agent of a credential this system did not issue. An agent calling a third-party API with a token that has no issuance record is either using a leaked credential or has discovered one, and both are incidents.
 - Publication by an agent to a location another run can read that did not pass through the §5.2 broker. Individually benign runs form a persistent collective through exactly this edge, which is why the action is gated (§7.5) and its bypass is the signal here.
 - Divergence from a workload's known execution cadence, and host-level indicators of privilege escalation, sandbox-boundary probing, or process anomalies from sensors inside the execution environment.
 - Repeated failure to progress against a declared objective, which predicts scope violation. An agent that cannot complete a task within its stated constraints resorts to methods outside them, so persistent non-progress is an early signal rather than a performance metric (§5.2).
 - Anomalies from auxiliary models in the pipeline, including summarisers, rerankers, classifiers, and translation or redaction services. A refusal, an error, or an unexpected output from a secondary model that processes the primary agent's content is evidence about the primary agent and is routed to the security team rather than discarded as a pipeline fault.
 - Human dismissal of an automated detection. An approver overriding a flag is a decision with an author, recorded under §9.1 with its justification, and reviewed in aggregate. Flags written off individually as false positives are how known-bad conditions persist.
+- Approval without scrutiny. Track per approver and per agent the time from request display to decision, the approval rate over time, and the override rate (§8). A decision faster than the request can be read, an approval rate climbing toward 100 percent, or an agent whose discretionary escalations fall while its workload holds is reviewed by someone other than the approver.
 
 Establish a **common platform monitoring baseline** across every environment hosting agent workloads, covering IAM events, network-path changes, and control-plane activity, separate from the agent's own action records. Action records show what the agent did through sanctioned interfaces; platform telemetry shows what happened around them, including attacks on the enforcement points themselves (§9.5).
 
@@ -847,7 +858,7 @@ Additional structural requirements.
 ### 10.2 Completeness and Negative Inference
 
 - An absent entry means something only under a completeness claim. Without one, an unlisted dataset proves nothing. With one, the absence is a producer assertion that can be relied on and challenged.
-- A truthful partial claim is a correct artifact. A complete claim over a black-box SaaS feature is a false one. Record unknowns as unknowns, including undisclosed sub-processors, opaque processing steps, and provider internals.
+- A truthful partial claim is a correct artifact. A complete claim over a black-box SaaS feature is a false one. Record unknowns as unknowns, including undisclosed sub-processors, opaque processing steps, provider internals, and runtime telemetry the agent framework cannot supply (sub-agent identity, permission-mode changes, in-process handoffs) as declared at session start (§5.2).
 - Richness is not an assurance level. A minimal AIBOM that is complete for its scope is worth more than a richly populated incomplete one.
 - Confidence derives from completeness, provenance, evidence quality, and generation method. Identical claims generated from build telemetry and drafted by hand during procurement warrant different confidence, which is why the header records the method.
 
@@ -863,7 +874,7 @@ In agentic systems the dependency set is not fixed at design time, and three vie
 
 Populate the observed view only from streams the agent runtime cannot author (§9.5). An agent's own account of its dependencies is not evidence of them. Keep time-bound records of which agent talked to which endpoint, when, and over which protocol.
 
-Record per agent the identity and role (planner, executor, retriever, critic, router), the model with its fine-tunes and adapters, the interaction pattern (hierarchical, peer, event-driven, hub-and-spoke), and the orchestration edges stating who invokes whom, under what conditions, and with what escalation path. These edges are what make impact analysis possible when one node changes, since a compromised retrieval agent or misconfigured guardrail agent propagates through them.
+Record per agent the registry identifier and the component version approved for it (§4.1), the identity and role (planner, executor, retriever, critic, router), the model with its fine-tunes and adapters, the interaction pattern (hierarchical, peer, event-driven, hub-and-spoke), and the orchestration edges stating who invokes whom, under what conditions, and with what escalation path. These edges are what make impact analysis possible when one node changes, since a compromised retrieval agent or misconfigured guardrail agent propagates through them.
 
 Record per tool the identity and function, invocation mechanism, access scope (read, write, admin, and the data and resources covered), authentication method and secret-handling reference, rate limits and quotas per agent and globally, and the definition version or hash the agent was approved to use. Approval binds to a definition version, not to a tool name (§6.4).
 
@@ -952,7 +963,15 @@ Validation must also include **control-environment attack**: the assumption that
 - A runtime that declares no provenance capability is refused at session start, not at its first consequential call.
 - A replayed runtime-to-broker request, and one with a timestamp outside the skew window, are each rejected.
 - A memory write, a subagent start, and a compaction each produce a broker decision record; absence of any is a failure.
+- A file write through an ordinary file or shell tool to a location a later session loads as context produces a memory-write decision and a §7.4 record.
+- A memory entry written from a single-case instruction carries case scope and is not retrieved for a different case.
 - An attempt to modify the anchored objective from tool output or retrieved content is rejected and logged; an approver extension is recorded with scope and approver identity.
+- An agent-triggered permission-mode change is denied, and an operator change toward less approval with no approver record is denied. Each produces a broker decision record carrying previous mode, new mode, and trigger.
+- An approval from an approver whose current role does not cover the action class is rejected, and the record carries the role checked.
+- An action in a policy-mandated review class cannot complete on the agent's own determination or stated confidence that review is unnecessary.
+- A handoff payload altered between send and receipt stops the run, where the runtime surfaces handoffs.
+- A sampling or shortened-retention configuration applied to broker decision records, approval records, or identity fields fails validation.
+- A runtime that cannot identify sub-agents, report permission-mode changes, or surface handoffs produces a recorded AIBOM gap with a named owner at session start.
 - Broker failover completes within the defined target with no permit issued during the transition.
 - A deliberately runaway task, recursing or fanning out without bound, is contained rather than serviced, and the containment is attributable to a named limit.
 - A replayed consequential operation carrying a previously seen idempotency key does not take effect twice.
@@ -986,6 +1005,7 @@ Validation must also include **control-environment attack**: the assumption that
 - Enumerate every outbound path from agent workloads, including load balancers, private links, peering, VPN enrollments, and shared services with their own egress, and compare against the approved allowlist. Any path not on the list is a finding, and any path a workload identity could have created is a critical finding (§3.3).
 - Search public code hosts, model hubs, package registries, and paste services for tokens attributable to the organization (§4.5). Revoke every match.
 - For two or three production agents, answer from records alone which model version is running, what it was trained or fine-tuned on, who the upstream supplier is, and what the license permits (§10). Every unanswerable question is a finding.
+- For the last 30 days of approvals, answer from records alone who approved each, what role was checked, whether review was mandated or discretionary, and how long the request was displayed before the decision (§8, §9.1). Every unanswerable field is a finding, and any approver with a median decision time under the time needed to read the request is a finding.
 
 Measure detection rate, false-positive rate, unsafe-action completion rate, correct-escalation rate, containment time, and recovery time. **Test complete sessions and realistic action sequences, not only isolated prompts.** Red teaming should be conducted by an independent team whose test design the agent cannot influence.
 
@@ -1065,6 +1085,14 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Vulnerability management | CVE tracking linked to the server inventory | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Delegation architecture | Orchestrator authority scoped independently of downstream union | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Decommissioning | Retirement exit checks on processes, ports, connections, credentials, and third-party authorizations | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Agent attribution | Per-agent registry identifier on broker records, or a declared and owned gap | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Autonomy posture | Permission-mode changes brokered, agent-triggered changes denied | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Oversight integrity | Approver authority verified and escalation routed by policy | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Oversight quality | Approval-pattern review per approver and per agent | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Memory integrity | Destination-based write classification, scope, causal link, and as-of reconstruction | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Memory drift | Memory growth and change baselined per agent | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Delegation integrity | Handoff payload hash at send and receipt, or a declared and owned gap | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Evidence completeness | Payload tiered by action class with decision records unsampled | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 
 Allowed statuses: `Not assessed`, `Planned`, `Partial`, `Implemented`, `Verified`, `Exception approved`. If coverage percentages are used, document the scoring method, evidence standard, treatment of partial controls, and independent-validation process.
 
@@ -1106,6 +1134,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Canonical, redacted, fail-closed error design across every component (§6.5)
 - Authentication, request limits, and the header baseline on every network-reachable surface, including fallback and debug servers (§6.7)
 - Bound human approval for high-impact actions (with TOCTOU-safe re-check), including publication to run-readable locations (§5.2, §7.5)
+- Approver authority verified at decision time, and escalation routed by policy and never by the agent or its stated confidence (§8)
 - Append-only/WORM audit storage and tested incident response
 - Assertion-backed principal attribution in audit records (§9.1)
 - Emergency stops, credential revocation, and a per-server kill switch (§5.3, §4.6)
@@ -1117,7 +1146,8 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - A current AIBOM with declared scope and a truthful completeness claim, required at the production gate (§10.5, §12)
 - Model routing layer isolated as its own trust zone with per-tenant credentials, where one is deployed (§3.3)
 - Broker availability engineering with outage treated as an incident (§5.2, §9.4)
-- Enforcement coverage across memory, retrieval, compaction, and delegation (§5.2)
+- Enforcement coverage across memory, retrieval, compaction, and delegation, with writes classified by destination (§5.2)
+- Permission-mode changes brokered and agent-triggered changes denied, where the runtime has a session-wide mode (§5.2)
 - Pre-run confirmation that the declared objective is achievable within granted scopes (§5.2)
 - Recursion, chain-length, fan-out, and compute bounds with backpressure at the broker (§5.2)
 - Idempotency keys on every consequential operation (§5.2)
@@ -1149,17 +1179,22 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Adversarial pre-validation using the model under test before tool-granting runs (§11)
 - Compaction preserving security determinations, with pre-compaction state retained for review (§7.1, §9.4)
 - Auxiliary-model anomaly routing and approver-override review (§9.3)
+- Approval-pattern review per approver and per agent, with mandated and discretionary reviews reported separately (§8, §9.3)
 - Renewed consent when a connected server changes capabilities or data access (§6.4)
 - Inventory-linked CVE and advisory tracking with maintenance-status verification (§10)
 - Differential discovery scanning for relocated and modified services (§4.6)
 - Guardrail verdicts kept out of any reward or selection surface (§7.8)
 - Cross-stream corroboration coverage for compromise-window reconstruction (§9.5)
-- Memory provenance and lifecycle controls
+- Memory provenance and lifecycle controls, including entry scope, causal link, and as-of reconstruction (§7.4)
+- Memory growth and change baselined per agent (§9.3)
 - Multi-agent delegation governance
+- Per-agent registry identifiers on broker records where the runtime exposes sub-agents, or a declared and owned gap (§4.1)
+- Handoff payload integrity where the runtime surfaces handoffs, or a declared and owned gap (§4.2)
 - Intent anchoring and an independent alignment gate ahead of consequential actions (§7.8)
 - Continuous shadow-server discovery and unregistered-endpoint alerting (§4.6)
 - Telemetry integrated with the SIEM/XDR, with behavioral baselines established (§9.3)
 - Platform and host telemetry baseline feeding the SIEM alongside agent action records (§9.3)
+- Payload detail and retention tiered by action class, with decision, approval, and identity records unsampled (§9.1)
 - Transitive-path enumeration and closure across shared services, including any cached fetch service (§3.3)
 - Eradication runbook covering accessed credentials, caches, model weights, and external channels (§9.4)
 - Retrospective run review capability (§9.4)
@@ -1186,6 +1221,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 ## 17. Glossary
 
 - **Agent:** An AI-enabled system that can plan or select actions and invoke tools.
+- **Agent registry identifier:** A persistent identifier unique to one agent or sub-agent, separate from the workload identity it runs under, that resolves to its registry entry and approved AIBOM component version (§4.1).
 - **AIBOM:** A scoped, machine-readable record of an AI system comprising a header, components and services, directed data flows, and evidence references; a record of fact, not a score or a compliance assertion (§10).
 - **Cache poisoning (artifact):** Substitution of attacker-controlled content for a trusted reference inside a mirror or cache, so that consumers receive malicious content with the mirror's credibility attached (§10).
 - **Cached fetch service:** A controlled intermediary that retrieves external content on behalf of workloads that have no direct internet reach, applying the organization's allowlist, logging, and DLP controls; granted per workflow on review (§3.3).
@@ -1204,6 +1240,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **DID:** Decentralized Identifier (W3C); requires a method defining issuance, resolution, rotation, and revocation.
 - **DPoP:** Demonstrating Proof of Possession; binds token use to a key.
 - **Error envelope:** The single canonical error shape emitted by every component (§6.5.2), comprising a stable code, generic message, enumerated remediation hint, escalation flag, correlation identifier, and timestamp.
+- **Escalation mode:** Whether a human review was mandated by policy or raised at the agent's discretion; recorded on every approval and reported separately, since discretionary escalation lets the agent select what a reviewer sees (§8).
 - **Evaluation awareness:** A system's inference that it is being tested rather than deployed; correlated with behavioral divergence, and a limit on how far evaluation results generalize to production (§11).
 - **Fail closed:** The property that a timeout, exception, or missing configuration produces a denial or a refusal to start, never a permit or an unauthenticated service.
 - **HITL:** Human-in-the-loop review or approval for defined actions.
@@ -1212,10 +1249,12 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Internal mirror:** The organization-operated registry through which every dependency, image, and model artifact is resolved; the single validation and egress point for third-party artifacts (§10).
 - **JIT:** Just-in-time issuance of short-lived, scoped credentials.
 - **MAESTRO:** CSA's seven-layer agentic AI threat-modeling framework.
+- **Memory scope:** The breadth a memory entry applies to (one case, one task, or all future work), recorded at write time; widening it is a new write with its own decision (§7.4).
 - **Minimum usable AIBOM:** The fields and completeness expectation policy requires for a given classification tier before an AIBOM can satisfy a gate (§10.5).
 - **MCP:** Model Context Protocol; exposes context and tools to compatible clients.
 - **mTLS:** Mutual TLS; bidirectional certificate authentication.
 - **Model routing layer:** A gateway component that selects among providers or models, holds their credentials, and mediates every prompt and response; a trust zone and policy-enforcement point in its own right (§3.3).
+- **Permission mode:** A session-wide runtime setting that determines how often an agent pauses for approval across all tools; a change to it is a consequential action, and a change triggered by the agent is denied (§5.2).
 - **Policy decision point (PDP):** Evaluates an action against authorization policy.
 - **Policy enforcement point (PEP):** Permits, denies, or constrains execution based on a policy decision.
 - **Proof of possession:** Cryptographic evidence that a caller holds the key to which a credential is bound.
@@ -1256,6 +1295,8 @@ Maintain dated references to the authoritative versions the organization actuall
 - Public code host, model hub, and package registry secret-scanning partner program documentation
 - Post-incident technical reports on agentic and research-workload compromises, including evaluation-environment incidents published by AI developers and national AI safety or security institutes (record publisher, date, and the controls each informed)
 - Published research on reward hacking, evaluation awareness, and misalignment generalization, as evidence about the limits of behavioral audits (§11)
+- Srikumar, M., Mibuari, E., Leibowicz, C., et al., The Observability Gap in AI Agents: What to Fix Before Agents Scale (Partnership on AI, September 2026), as evidence on what agent runtimes do and do not emit; its per-framework findings are a documentation review dated May 2026 and are point-in-time
+- The current OpenTelemetry semantic conventions for generative AI, where agent telemetry is encoded in them; the conventions were in development status as of the Partnership on AI review, so verify the current release and attribute names before building against them (§6.6)
 
 ---
 
@@ -1267,8 +1308,10 @@ Secure agentic AI requires independently enforced controls **around** the model.
 
 ## Version History
 
-**Version:** Consolidated 2.9.2
+**Version:** Consolidated 2.10
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
+
+**Changes from 2.9.2:** per-agent registry identifier separate from workload identity, when supported (§4.1, §10.3); handoff payload hash at send and receipt, when supported (§4.2); permission-mode change as a consequential action with agent-triggered changes denied, when supported (§5.2); memory writes classified by destination (§5.2); capability declaration extended to sub-agent identity, permission-mode reporting, and handoff surfacing, with each unsupported item recorded as an owned AIBOM gap (§5.2, §10.2); memory entry scope, causal link, and as-of reconstruction (§7.4); escalation routed by policy with model-stated confidence excluded, approver authority verified at decision time, and the request as displayed retained (§8); audit record fields for registry identifier, permission mode, approval evidence, and handoff hashes, with payload tiering that never samples decision, approval, or identity records (§9.1); memory growth, agent-attempted permission-mode change, and approval without scrutiny added as monitoring signals (§9.3); nine new regression tests and one verification probe (§11); eight new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for agent registry identifier, escalation mode, memory scope, and permission mode (§17); reference additions (§18). Sourced from Partnership on AI, The Observability Gap in AI Agents: What to Fix Before Agents Scale (September 2026).
 
 **Changes from 2.9.1:** retirement exit checks added as a lifecycle state (§4.6), with a Phase 4 cross-reference (§13) and a coverage row (§14); context overflow added to the context-engineering threats (§7.1); planning note for deployments under Chinese jurisdiction, drawn from TC260 AI Safety Governance Framework 3.0 (§15, §18).
 
@@ -1282,4 +1325,4 @@ Secure agentic AI requires independently enforced controls **around** the model.
 **Changes from 2.2 (delivered in 2.3):** sixth governing principle on capability combinations; trifecta added to system classification (§2.1); server-side authorization decisions, OAuth 2.1, and resource-indicator token binding (§4.3); server registration and shadow discovery (§4.6); per-server kill switch (§5.3); OAuth client/authorization-server role separation (§6.3); infrastructure-enforced tenant isolation and ingestion-time classification (§7.4); intent integrity and the capability trifecta (§7.8); log-store minimization and retention (§9.1); SIEM/XDR integration and three new monitoring signals (§9.3); compromise-scenario drills (§9.4); tenant-isolation and telemetry tests plus verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
 **Changes from 2.1 (delivered in 2.2):** secret custody and model-context exclusion, and untrusted project configuration (§4.5); local-transport binding and origin validation (§6.2); full-schema metadata scanning, display-control stripping, and TOFU pinning (§6.4); error design (§6.5); service surface hardening baseline (§6.7); safe command and process execution (§7.6); model invocation guardrails (§7.7).
 
-**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.9 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
+**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.10 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
