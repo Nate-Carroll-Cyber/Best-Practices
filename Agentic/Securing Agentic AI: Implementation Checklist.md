@@ -1,8 +1,8 @@
 # Securing Agentic AI: Implementation Checklist
 
-Companion to *Securing Agentic AI: Technical Implementation Framework*, Consolidated 2.9.2. Every item is self-contained and answerable without opening the framework. Section references in parentheses point to the source text for anyone who wants the reasoning.
+Companion to *Securing Agentic AI: Technical Implementation Framework*, Consolidated 2.11. Every item is self-contained and answerable without opening the framework. Section references in parentheses point to the source text for anyone who wants the reasoning.
 
-**How to use.** Answer each item with implemented, partial, planned, exception approved, or not assessed, and record the evidence and the owner. Do not report a percentage complete. Gate A must pass before production. Gate B must pass before scaling beyond the initial cohort. Gate C runs continuously.
+**How to use.** Answer each item with verified, implemented, partial, planned, exception approved, or not assessed, and record the evidence and the owner. Verified requires a produced artifact, export, configuration, test record, or drill record; interview evidence alone caps an item at implemented. Every partial carries a gap type. Document means the control runs and only the named artifact is missing. Measure means the control runs and the figure it asks for has not been computed. Scope means the control runs in part of the estate and not in another named part. Control means the mechanism is absent, misconfigured, or failed. Planned records an owner and a closure date no more than 180 days out and carries no weight. Do not report a percentage complete. Report three figures and three counts instead. Strict counts verified items only. Documented adds partials whose gap types are document or measure only, and states what the program could score by writing down and measuring what it already does. Provisional adds every remaining partial. Beneath them, count items with a foothold (verified, implemented, or partial), items absent (planned or not in place), and items unknown (not assessed). Gate A must pass before production. Gate B must pass before scaling beyond the initial cohort. Gate C runs continuously.
 
 **Six principles behind every item.** The model proposes and deterministic controls decide. Every action has an authenticated principal. Authority is narrow, temporary, and context-bound. Untrusted content stays untrusted. High-impact actions stay interruptible and accountable. Capability combinations are the unit of risk.
 
@@ -37,7 +37,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 
 **Governance artifacts maintained** (§2.3)
 
-- [ ] Data-flow diagrams with trust boundaries, threat model and abuse cases, tool and capability inventory, AIBOM with declared scope and completeness claim, test results, oversight and escalation procedures, incident-response plan, control evidence and residual-risk decisions, versioned change history
+- [ ] Data-flow diagrams with trust boundaries, threat model and abuse cases, tool and capability inventory, AIBOM with declared scope and completeness claim, test results, oversight and escalation procedures, decision-rights register mapping every automated action class to HITL or GITL with an owner per entry and the skills reservations, incident-response plan, control evidence and residual-risk decisions, versioned change history
 
 ---
 
@@ -55,6 +55,8 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Authorization is decided server-side from verified facts, never from client-supplied identity, roles, or scopes (§4.3)
 - [ ] Where OAuth is used, tokens are bound to their target with resource indicators, and client credentials are not shared between agents (§4.3)
 - [ ] Development, staging, and production are separated logically and physically, with no credential reuse across them (§4.3)
+- [ ] Where the runtime exposes sub-agents, each carries a persistent registry identifier separate from the workload identity it runs under, resolving to its registry entry and approved AIBOM component version; where it cannot, the gap is recorded in the AIBOM with a named owner (§4.1, §10.3)
+- [ ] Where the runtime surfaces handoffs, the handoff payload is hashed at send and at receipt and a mismatch stops the run; where it cannot, the gap is recorded in the AIBOM with a named owner (§4.2)
 - [ ] Delegation narrows or preserves scope at every hop, records the human principal, enforces depth and fan-out limits, and terminates child sessions with the parent. No orphaned agents (§4.2)
 - [ ] Orchestrator and supervisor agent authority is scoped independently of the union of its downstream agents' permissions, and does not hold standing credentials to source data or destinations it merely reasons over the results of (§4.2)
 
@@ -82,19 +84,23 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Emergency stop can reject actions, revoke credentials, close network paths, terminate tools, quarantine sessions, preserve evidence, and alert responders (§5.3)
 - [ ] A per-server kill switch disables a specific tool server, revokes its credentials, and cuts its reachability within minutes without a deployment cycle (§5.3, §4.6)
 - [ ] Breakers on privileged, destructive, financial, safety-critical, or externally visible actions remain latched until an authorized operator resets them (§5.3)
+- [ ] A breaker tripped by an action class running as GITL latches for the whole class, and the incident demotes the class to HITL in the decision-rights register until its owner re-earns promotion (§5.3, §8)
 - [ ] Class-scoped stop halts every workload matching a type, model family, or evaluation task in one operation. It enumerates from the registry and runs on infrastructure the halted class cannot reach (§5.3)
 
 ### A4. The enforcement broker
 
 - [ ] A deterministic broker runs outside the agent runtime, evaluates policy, and executes the action itself. Honoring a denial is not something the runtime can skip (§5.2)
 - [ ] Broker scope covers tool calls, memory writes, memory and knowledge retrieval, compaction, subagent start and stop, skill or tool registration, and any write to a location another run can read (§5.2)
+- [ ] A write is classified by its destination, not by the tool that made it. A file, row, or index entry a later session loads as context receives the memory-write decision even when it arrives through an ordinary file or shell tool (§5.2)
+- [ ] Where the runtime has a session-wide permission mode, a change to it is a consequential action. A change toward less approval requires an approver, an agent-triggered change is denied, and the mode in force is recorded on every action record (§5.2, §9.1)
+- [ ] The broker routes each action class as HITL or GITL from the decision-rights register, records the register entry version on every decision, and denies any class with no entry (§5.2, §8)
 - [ ] Tool output never automatically triggers another tool. Each action requires a new proposal and a new decision (§5.2)
 - [ ] Per-call timeouts and output-size limits are enforced, and failed privileged calls are not auto-retried (§5.2)
 - [ ] Per-task volume budgets on records and bytes read, written, and sent are enforced as limits, not alerted on as signals (§5.2)
 - [ ] Recursion depth, chain length, delegation fan-out, and per-task compute and wall-clock budgets are capped, with timeouts on long-running operations (§5.2)
 - [ ] Backpressure and queue limits apply at the boundary, and malformed, oversized, and missing-field requests are rejected before model or tool execution (§5.2)
 - [ ] Consequential operations carry an idempotency key, and a duplicate is rejected or safely replayed rather than re-executed (§5.2)
-- [ ] The runtime declares its capabilities at session start and the session is refused when it cannot supply provenance labels, correlation identifiers, or signed envelopes (§5.2)
+- [ ] The runtime declares its capabilities at session start and the session is refused when it cannot supply provenance labels, correlation identifiers, or signed envelopes. The declaration also states whether it can identify sub-agents, report permission-mode changes, and surface handoffs, and each unsupported item is recorded as an owned AIBOM gap rather than passed silently (§5.2, §10.2)
 - [ ] Task feasibility is confirmed before the session starts. An objective unachievable within granted scopes is refused rather than run to failure (§5.2)
 - [ ] Runtime-to-broker requests carry a timestamp within a negotiated skew window and a unique request identifier, and replays are rejected (§5.2)
 - [ ] The broker is deployed redundantly across failure domains with a measured availability target, and any outage is handled as a security incident (§5.2, §9.4)
@@ -115,6 +121,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Sessions and memory are isolated by tenant, user, agent, and task, with infrastructure-enforced namespaces that make cross-tenant retrieval technically impossible (§7.4)
 - [ ] Ownership is revalidated on every request. No cached or implicit session-to-user mapping (§7.4)
 - [ ] Data is classified at ingestion, not at retrieval, and every context item has a TTL with enforced purge (§7.4)
+- [ ] Every memory entry records its scope (one case, one task, or all future work), the action or input that caused it, and enough to reconstruct what memory held as of any past time. Widening scope is a new write with its own decision (§7.4)
 - [ ] Output classification evaluates the aggregate, not the highest label among inputs (§7.5)
 - [ ] Destination-aware data-loss prevention runs before release or tool reuse (§7.5)
 - [ ] Publication to any location another run can read passes the broker and the approval path (§7.5, §5.2)
@@ -154,7 +161,18 @@ Three yes answers require removing or constraining at least one leg, or a docume
 
 ### A8. Human oversight
 
-- [ ] High-impact, irreversible, externally visible, and security-sensitive actions require explicit approval unless a documented assessment permits bounded automation (§8)
+- [ ] High-impact, irreversible, externally visible, and security-sensitive actions require explicit approval unless a documented assessment permits bounded automation, and that assessment is the decision-rights register (§8)
+- [ ] The decision-rights register holds one entry per automated action class with mode (HITL or GITL), named owner, four-test result, reversal ceiling, observation window, and promotion and demotion history. No class goes live without an entry (§8)
+- [ ] Every GITL entry passes all four tests. The action can be undone, it interrupts no production service, nobody outside the organization observes it, and it is neither a reportable event nor a change to attested records. A class failing any one stays HITL (§8)
+- [ ] Permanent HITL entries exist for backup deletion, retention shortening, immutability changes, any action reducing recoverability, containment on OT and safety systems, and the always-approve list (§8)
+- [ ] No class is promoted to GITL before it has run for the observation window, one quarter by default, with reversals below the stated ceiling. An incident caused by a GITL class demotes it, and a reversal spike reopens the entry automatically (§8, §9.3)
+- [ ] The register is under change control, each change is an approval-bound consequential action, and agent writes to it are denied and logged (§8)
+- [ ] Skills reservations are recorded in the register with task, role, cadence, and review date, and the agent is denied those action classes (§8)
+- [ ] Which actions reach a human is set by policy, never by the agent. Routing uses action class, target, and data classification, and model-stated confidence is not an input (§8)
+- [ ] Each approval record states whether review was mandated by policy or raised at the agent's discretion, and the two approval rates are reported separately (§8)
+- [ ] The approval path verifies the approver's current role against the action class and data classification at decision time, rejects an approval from outside that scope, and records the role checked (§8)
+- [ ] The request as displayed, including the triggering rule and the agent's recommendation with its cited evidence, is retained with the decision (§8, §9.1)
+- [ ] Known errors are seeded into the output each validator reviews, generated outside the agent runtime and never disclosed to it, and catch rate is reported per validator and per action class. A falling rate triggers review, and the rate must hold or improve as classes move to GITL (§8, §9.3)
 - [ ] Approval requests show the exact action, target, parameters, data touched, expected impact, reversibility, agent and principal, policy decision, expiration, and rollback mechanism (§8)
 - [ ] Approval is cryptographically bound to a canonical representation of the action, and reauthorized immediately before execution (§8)
 - [ ] Approval timeouts and system failures default to denial (§8)
@@ -164,6 +182,8 @@ Three yes answers require removing or constraining at least one leg, or a docume
 
 - [ ] Records capture the authenticated agent and principal, tenant, session, task and trace identifiers, action and target, policy decision and version, approval evidence, tool identity and version, classifications, outcome, timing, error category, and sequence metadata (§9.1)
 - [ ] Records carry the signing key identifier, correlation identifier, resolved model identifier and version, and mock-mode state (§9.1)
+- [ ] Records carry the agent's registry identifier where supplied, the permission mode in force, the decision-rights register entry and version the action ran under, full approval evidence (approver, role checked, mandated or discretionary, triggering rule, request as displayed, display and decision times), permission-mode changes with trigger, and handoff hashes where surfaced (§9.1)
+- [ ] Payload detail and retention are tiered by action class, and broker decision records, approval records, and identity fields are never sampled or shortened (§9.1)
 - [ ] The initiating principal is an authenticated claim, not a self-asserted string. Sessions without one are labeled self-asserted (§9.1)
 - [ ] Credentials and personal data are masked at write time. The log store has not become a new sensitive-data store (§9.1)
 - [ ] Records go to independently controlled append-only or WORM storage with externally anchored checkpoints, unreachable by the agent (§9.1)
@@ -189,6 +209,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Threat model covers model behavior, orchestration, memory, tools, data, identity, infrastructure, supply chain, users, and cross-agent interaction, mapping multi-step abuse paths rather than isolated prompts (§11)
 - [ ] Tenant isolation is tested on every build and repeated under concurrency (§11)
 - [ ] A current AIBOM meeting the minimum for the system's tier exists. Missing, incomplete for tier, or stale blocks promotion (§12, §10.5)
+- [ ] Every automated action class the agent can execute has a decision-rights register entry, with permanent HITL entries in place, before the gate passes (§12, §8)
 - [ ] No unresolved critical vulnerability, and no unaccepted high-severity vulnerability affecting authorization, isolation, data protection, or privileged tool use (§12)
 - [ ] Residual risk documented with a named owner, and security and business sign-off recorded (§12)
 
@@ -219,6 +240,10 @@ Apply where Step 0 flagged the condition.
 - [ ] Platform monitoring baseline covering IAM events, network-path changes, and control-plane activity, separate from agent action records (§9.3)
 - [ ] Auxiliary-model anomalies (summariser refusals, classifier errors, unexpected secondary-model output) are routed to security rather than discarded as pipeline faults (§9.3)
 - [ ] Approver overrides of automated detections are recorded with justification and reviewed in aggregate (§9.3)
+- [ ] Approval patterns are reviewed per approver and per agent. Time from display to decision, approval rate over time, override rate, and seeded-error catch rate are tracked, and a decision faster than the request can be read or a rate climbing toward 100 percent is reviewed by someone other than the approver (§8, §9.3)
+- [ ] Reversal rate is measured per GITL action class against its stated ceiling over the register's observation window. A rate above the ceiling reopens the entry, and a GITL class whose reversals are not counted reverts to HITL (§8, §9.3)
+- [ ] Memory growth and change are baselined per agent (entry count, write rate, share scoped beyond one case, share written from untrusted sources) and departures alert (§9.3)
+- [ ] Coverage is reported as strict, documented, and provisional figures with gap-typed partials and foothold, absent, and unknown counts, never as an average (§14)
 - [ ] Guardrail verdicts are kept out of any reward, score, or selection surface (§7.8)
 - [ ] Cross-stream corroboration in place for compromise-window reconstruction, using broker decisions, cloud provider logs, tool-side logs, and network telemetry (§9.5)
 - [ ] Memory provenance and lifecycle controls, including quarantine, versioning, correction, rollback, and deletion (§7.4)
@@ -246,6 +271,7 @@ Apply where Step 0 flagged the condition.
 - [ ] Stronger workload isolation for higher-risk use cases (§5.1)
 - [ ] Configuration naming convergence to a single canonical scheme (§6.7)
 - [ ] Periodic access and tool recertification, and change-triggered reassessment (§13)
+- [ ] Promotion of action classes from HITL to GITL happens only through the register's evidence rule, never by phase transition or go-live (§13, §8)
 - [ ] Independent assurance and regulatory-mapping updates (§15)
 - [ ] Documented decommissioning and data-deletion plan, with AIBOM revision history preserved after retirement (§13)
 - [ ] Retirement runs as a lifecycle state with exit checks. Main process, background services, and child processes are confirmed terminated, with process state, listening ports, and network connections each checked rather than assumed (§4.6)
@@ -279,7 +305,19 @@ Run against every network-reachable component, including fallback and debug serv
 - [ ] Runtime declaring no provenance capability refused at session start
 - [ ] Replayed request and out-of-skew timestamp each rejected
 - [ ] Memory write, subagent start, and compaction each produce a broker decision record
-- [ ] Attempt to modify the anchored objective from tool output rejected and logged
+- [ ] A file write through an ordinary file or shell tool to a location a later session loads as context produces a memory-write decision and a memory record
+- [ ] A memory entry written from a single-case instruction carries case scope and is not retrieved for a different case
+- [ ] Attempt to modify the anchored objective from tool output rejected and logged, and an approver extension recorded with scope and approver identity
+- [ ] Agent-triggered permission-mode change denied, and an operator change toward less approval with no approver record denied, each with a decision record carrying previous mode, new mode, and trigger
+- [ ] Approval from an approver whose current role does not cover the action class rejected, with the role checked on the record
+- [ ] An action in a policy-mandated review class cannot complete on the agent's own determination or stated confidence that review is unnecessary
+- [ ] A handoff payload altered between send and receipt stops the run, where the runtime surfaces handoffs
+- [ ] A sampling or shortened-retention configuration applied to broker decision records, approval records, or identity fields fails validation
+- [ ] A runtime that cannot identify sub-agents, report permission-mode changes, or surface handoffs produces a recorded AIBOM gap with a named owner at session start
+- [ ] An action whose class is HITL cannot complete without an approval record, and an action whose class has no register entry is denied
+- [ ] A GITL action completes without per-action approval and its decision record carries the register entry version; a GITL entry failing any of the four tests is rejected at register validation
+- [ ] An agent-originated write to the decision-rights register, and an agent proposal in a skills-reservation class, are each denied and logged
+- [ ] A seeded error placed in a validator's queue is recorded with whether it was caught, and the per-validator catch rate is computable from records alone
 - [ ] Broker failover completes within target with no permit issued during transition
 - [ ] A deliberately runaway task, recursing or fanning out without bound, is contained rather than serviced
 - [ ] A replayed consequential operation carrying a previously seen idempotency key does not take effect twice
@@ -317,6 +355,8 @@ One-off exercises that produce evidence. Informative either way.
 - [ ] Search public code hosts, model hubs, package registries, and paste services for tokens attributable to the organization. Revoke every match
 - [ ] For the last two or three retired agents or tool servers, confirm that no process, listening port, credential, third-party authorization, or public entry point survives. Anything still live is a finding
 - [ ] For two or three production agents, answer from records alone which model version is running, what it was tuned on, who the upstream supplier is, and what the license permits. Every unanswerable question is a finding
+- [ ] For the last 30 days of approvals, answer from records alone who approved each, what role was checked, whether review was mandated or discretionary, and how long the request was displayed before the decision. Every unanswerable field is a finding, and any approver with a median decision time under the time needed to read the request is a finding
+- [ ] For the last 30 days, list from records alone every automated action class that executed without per-action approval and match each to its register entry, mode, owner, and reversal rate. A class with no entry is a critical finding, a GITL class with no measured reversal rate is a finding, and a period with no seeded errors placed before any validator is a finding
 
 ---
 
