@@ -48,7 +48,7 @@ Identity and access management owns these recommendations, and the agent platfor
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
 | Identity and Trust | Cryptographic Agent Identity | Each agent, sub-agent, MCP server, and gateway should authenticate with its own workload identity from the enterprise identity authority, carried in a URI SAN or signed claim rather than a certificate Common Name. | A test connection that presents identity only in the Common Name is refused. |
-| Identity and Trust | Secrets & Trust | Tools should resolve secrets from opaque handles at execution time so that the model, prompts, memory, logs, and source control hold no credentials, with signing keys kept in a KMS or HSM and static, long-lived, or leaked tokens retired and rotated. | A credential planted in a dependency error is redacted before it reaches the model or storage. |
+| Identity and Trust | Secrets & Trust | Tools should fetch each secret from the vault at execution time using a reference ID, so the model only ever sees the reference or the secret value. Neither the model, prompts, memory, logs, and source control should hold no credentials, with signing keys kept in a KMS or HSM and static, long-lived, or leaked tokens retired and rotated. | A credential planted in a dependency error is redacted before it reaches the model or storage. |
 | Identity and Trust | Access & Entitlements | Agent credentials should be issued per task, expire within minutes, name their target resource under RFC 8707, bind to the workload by mTLS or DPoP, and stay separate across development, staging, and production. | A token replayed from a second workload and a development credential are both refused at the production endpoints tested. |
 | Identity and Trust | Identity Provider | The token service should revoke the delegation chains and pending approvals of a disabled person within the published latency and suspend any agent whose only owner is disabled. | Disabling a test user revokes the chains they started within the latency target. |
 | Control Plane | Registries | Each agent, server, and tool should carry a persistent registry identifier that the broker stamps on each decision record. | A registry export joins to a sampled day of broker records. |
@@ -214,16 +214,16 @@ An agent that sends or receives agent-to-agent traffic should follow these recom
 Each row names the external controls a recommendation area supports. Support is not a claim that the area satisfies those controls. Privacy and Legal should confirm applicability for each deployment. ISO/IEC 27001 or SOC 2 alignment should be stated only after auditor review.
 
 | Recommendation area | ISO/IEC 42001:2023 Annex A | NIST AI RMF | OWASP Top 10 for Agentic Applications 2026 |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Identity and credentials | A.3.2, A.4.2, A.6.2.6 | Govern, Manage | ASI03 Identity and Privilege Abuse |
-| Authorization and enforcement | A.6.2.6, A.9.2, A.9.4 | Manage | ASI02 Tool Misuse, ASI03, ASI05 Unexpected Code Execution |
+| Authorization and enforcement | A.6.2.6, A.9.2, A.9.4 | Manage | ASI02 Tool Misuse and Exploitation, ASI03, ASI05 Unexpected Code Execution |
 | Execution environment | A.4.5, A.6.2.3, A.6.2.5 | Map, Manage | ASI05, ASI02 |
 | Context, memory, and data | A.7.2 to A.7.6, A.9.4 | Map, Manage | ASI01 Agent Goal Hijack, ASI06 Memory and Context Poisoning |
-| Human oversight | A.9.3, A.6.1.3, A.4.6 | Manage | ASI09 Human-Agent Trust Exploitation |
+| Human oversight and decision rights | A.9.3, A.6.1.3, A.4.6 | Manage | ASI09 Human-Agent Trust Exploitation |
 | Audit and observability | A.6.2.8, A.6.2.6 | Govern, Measure | ASI10 Rogue Agents, ASI08 Cascading Failures |
 | Validation and evaluation | A.6.2.4, A.6.2.5, A.6.2.7, A.5.2 | Measure | All ten as test coverage |
-| Supply chain and AIBOM | A.4.3 to A.4.5, A.10.2, A.10.3 | Govern, Map | ASI04 Agentic Supply Chain Vulnerabilities |
+| Supply chain and AIBOM | A.4.3 to A.4.5, A.7.5, A.10.2, A.10.3 | Govern, Map | ASI04 Agentic Supply Chain Vulnerabilities |
 | Incident response | A.6.2.8, A.8.4 | Manage | ASI08, ASI10 |
-| Lifecycle and change | A.5.2, A.6.2.4 to A.6.2.7 | Govern | ASI10 |
-| MCP profile | A.4.4, A.6.2.3, A.10.2, A.10.3 | Manage | ASI02, ASI04 |
+| Lifecycle and change | A.5.2, A.6.1.2, A.6.2.4 to A.6.2.7 | Govern | ASI10 |
+| MCP profile | A.4.4, A.6.2.3, A.10.2, A.10.3 | Manage | ASI02, ASI03, ASI04 |
 | A2A profile | A.3.2, A.4.4, A.7.5, A.9.4, A.10.2 | Manage | ASI07 Insecure Inter-Agent Communication, ASI08, ASI03 |
