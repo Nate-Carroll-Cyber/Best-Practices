@@ -43,24 +43,24 @@ Each item in this standard is a recommendation and uses should. A recommendation
 
 ## Identity and credentials
 
-How agents, servers, and gateways prove who they are, and how their credentials are issued, scoped, stored, and revoked.
+This section defines how agents, servers, and gateways prove who they are and how their credentials are issued, scoped, stored, and revoked.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Identity and Trust | Cryptographic Agent Identity | Each agent, sub-agent, MCP server, and gateway should authenticate with its own workload identity from the enterprise identity authority, carried in a URI SAN or signed claim rather than a certificate Common Name. | A test connection that presents identity only in the Common Name is refused. |
-| Identity and Trust | Secrets & Trust | Tools should fetch each secret from the vault at execution time using a reference ID, so the model only ever sees the reference or the secret value. Neither the model, prompts, memory, logs, and source control should hold no credentials, with signing keys kept in a KMS or HSM and static, long-lived, or leaked tokens retired and rotated. | A credential planted in a dependency error is redacted before it reaches the model or storage. |
+| Identity and Trust | Secrets & Trust | Tools should resolve secrets from opaque handles at execution time so that the model, prompts, memory, logs, and source control hold no credentials, with signing keys kept in a KMS or HSM and static, long-lived, or leaked tokens retired and rotated. | A credential planted in a dependency error is redacted before it reaches the model or storage. |
 | Identity and Trust | Access & Entitlements | Agent credentials should be issued per task, expire within minutes, name their target resource under RFC 8707, bind to the workload by mTLS or DPoP, and stay separate across development, staging, and production. | A token replayed from a second workload and a development credential are both refused at the production endpoints tested. |
 | Identity and Trust | Identity Provider | The token service should revoke the delegation chains and pending approvals of a disabled person within the published latency and suspend any agent whose only owner is disabled. | Disabling a test user revokes the chains they started within the latency target. |
 | Control Plane | Registries | Each agent, server, and tool should carry a persistent registry identifier that the broker stamps on each decision record. | A registry export joins to a sampled day of broker records. |
 | Enforcement | Secrets Redaction | Before logs, tool output, or error payloads are stored or displayed, a secret scanner should check them against known secret patterns and keep only allowlisted fields. | A test credential under an unexpected field name does not reach the log. |
-| Platform and Containment | Policy-as-Code | A permission change, or a repository setting that adds an MCP server or pre-approves a tool, should load only after policy-as-code review and the agent owner’s approval. | An unapproved MCP definition committed to a test repository is unreachable at session start. |
+| Platform and Containment | Policy-as-Code | A permission change, or a repository setting that adds an MCP server or pre-approves a tool, should load only after policy-as-code review and the agent owner's approval. | An unapproved MCP definition committed to a test repository is unreachable at session start. |
 
 ## Authorization and enforcement
 
-How an enforcement broker checks each consequential action an agent proposes and approves or denies it before it runs.
+This section defines how an enforcement broker checks each consequential action an agent proposes and approves or denies it before it runs.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Identity and Trust | Access & Entitlements | Each agent should hold only the tools, data, destinations, and action types its declared task needs, with effective permissions recertified each quarter. | Effective permissions in a sample match documented permissions. |
 | Control Plane | Policy Engine (PDP) | The broker should authenticate the principal and agent, check the tool's pinned version, validate the request against a strict schema, and then authorize it as a separate step that also covers changes to the session permission mode. | A schema-valid test request to an unauthorized recipient is denied with a 403, and an agent-requested mode change is denied. |
 | Control Plane | Policy Engine (PDP) and Registries | Agent identities should have no write or delegated administrative access to the policy repository, registries, gateway configuration, decision-rights register, or AIBOM. | A test workload-identity write to each store is denied. |
@@ -74,10 +74,10 @@ How an enforcement broker checks each consequential action an agent proposes and
 
 ## Execution environment
 
-The sandbox, network, and hardware isolation that agent code, tool calls, and model weights run inside.
+This section defines the sandbox, network, and hardware isolation that agent code, tool calls, and model weights run inside.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Orchestration | Agent Runtime | Untrusted code and high-risk tools should run in disposable non-root sandboxes on a Firecracker or Kata microVM runtime class with Linux capabilities dropped, a read-only root filesystem, workload-tested seccomp, resource limits, no network by default, and no credentials or host mounts. | Admission control rejects a test pod that lacks an approved runtime class or one of these settings. |
 | Orchestration | Sandbox Egress | Sandbox egress should be blocked at both the sandbox and the cluster or cloud layer except through one allowlisted and logged proxy, with no metadata endpoint access and no internet access for workloads that run generated code or hold all three trifecta legs. | Tested disallowed destinations are blocked at both layers, and a metadata request fails. |
 | Inference | On-Prem GPU Inference | Inference should run on GPU nodes separate from tool execution, and enterprise-owned weights should be decrypted only inside an attested trusted execution environment such as NVIDIA Hopper confidential computing on AMD SEV-SNP or Intel TDX hosts. | An induced attestation failure in staging blocks weight decryption, and a test execution pod cannot schedule a GPU. |
@@ -87,10 +87,10 @@ The sandbox, network, and hardware isolation that agent code, tool calls, and mo
 
 ## Context, memory, and data
 
-How content entering an agent’s context, memory, and retrieval stores is labeled, screened, isolated, and kept current.
+This section defines how content entering an agent's context, memory, and retrieval stores is labeled, screened, isolated, and kept current.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Control Plane | Deterministic Guardrail | A guardrail with none of the agent's permissions should check each delete, send, modify, or export against the user's objective held by the control plane outside the agent's context and escalate actions that fall outside the objective's scope or exceed the owner's embedding-distance threshold. | In testing, an injected action is blocked even after the agent's own copy of the objective has been overwritten. |
 | Control Plane | Human Oversight (HITL) | A write to a place another run can read, such as a public repository, model hub, package registry, paste site, webhook, or shared bucket, should go to human approval by default. | A write to a shared bucket without a permit is blocked. |
 | Orchestration | Controller / Execution Control | The prompt should state as rules that the agent does not act outside the declared targets, use social engineering, create third-party accounts, or publish where others can read. | Prompt review finds these rules and no claims that the environment prevents the actions. |
@@ -104,10 +104,10 @@ How content entering an agent’s context, memory, and retrieval stores is label
 
 ## Human oversight and decision rights
 
-Which action classes need a person’s approval, how each approval request is built and bound to its action, and how approver quality is checked.
+This section defines which action classes need a person's approval, how each approval request is built and bound to its action, and how approver quality is checked.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Control Plane | Human Oversight (HITL) | The broker should route each automated action class by its register entry, hold permanent deletion, backup deletion, retention or immutability changes, fund transfers, permission changes, PII disclosure, production modification, OT or safety-system containment, binding external commitments, pricing or billing changes, external transfers of internal data or code, bulk production database changes, and any class with no rollback path at HITL, and send each approval request built from the canonical action to an approver whose current role it checks, whose decision it binds cryptographically to that exact action, and whose hourly volume it caps. | In testing, an action with no register entry is denied, a parameter changed after approval blocks execution, and a burst of approval requests queues past the cap. |
 | Control Plane | Policy Engine (PDP) | The broker should escalate a GITL action to HITL when signals from outside the model, such as the amount, data class, target system, anomaly score, or a recent breaker trip, cross the owner's threshold, and it should not use the model's own stated confidence as a signal. | A GITL action with a test anomaly score above the threshold goes to an approver. |
 | Enforcement | Enforcement Broker (PEP) | Freezes and approval rules should be enforced by the broker rather than by prompt text. | Sampled controls in the evidence table map to a broker rule. |
@@ -117,10 +117,10 @@ Which action classes need a person’s approval, how each approval request is bu
 
 ## Audit and observability
 
-What each agent action records, where those records are kept, and what security operations detects from them.
+This section defines what each agent action records, where those records are kept, and what security operations detects from them.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Identity and Trust | Identity Provider | Records should take the initiating person from a validated OIDC token or mTLS-bound assertion and label sessions without one as self-asserted. | A test session with no assertion is labeled self-asserted. |
 | Platform and Containment | Zero Trust Control | Each network-reachable component, including debug and health-check servers, should use one shared library that authenticates callers, caps request size, rate-limits by identity, returns fixed error codes with consistent status codes, and keeps stack traces and downstream error text out of model and caller responses. | In testing, oversized and over-limit requests are rejected before parsing, an unauthorized request returns a non-retryable 403, and a downstream error string does not reach the model. |
 | Observability | Decision / Action Log | Each security-relevant event should be written to append-only or WORM storage the agent runtime cannot reach, recording the agent, initiating person, registry identifier, task and step, action and target, policy decision and version, approval, tool, model, outcome, correlation ID, and a structured decision summary in place of raw chain-of-thought. | A thirty-day sample shows the fields populated, and a test workload attempt to delete records or change retention is denied. |
@@ -130,10 +130,10 @@ What each agent action records, where those records are kept, and what security 
 
 ## Validation and evaluation
 
-The testing an agent passes before release, including threat modeling, attacks on the enforcement point, release evaluation, and red teaming.
+This section defines the testing an agent passes before release, including threat modeling, attacks on the enforcement point, release evaluation, and red teaming.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Platform and Containment | CI/CD Pipeline | CI should run the error-path, service-surface, and tenant-isolation regression suites on each change, including against debug and fallback servers, and block the merge on a failure. | CI lists the suites as required checks. |
 | Observability | Continuous Validation and Evals | Release evaluation should run in CI against the production sandbox and gateway, cover prompt injection, goal hijacking, tool substitution, token misuse, cross-tenant leakage, memory poisoning, privilege escalation, approval tampering, sandbox escape, covert exfiltration, logging interruption, and emergency stop, gate the release on a failure threshold, and compare evaluated with production success rates to catch sandbagging. | The evaluation log names the production environment, shows a result for each listed case, and meets the threshold. |
 | Governance | Red Team / Threat Modeling | An independent red team should threat-model each system across model behavior, orchestration, memory, tools, data, identity, infrastructure, supply chain, and cross-agent paths, attack the enforcement point and guardrails in complete sessions, and have the model try offline to escape its own sandbox before it receives code-execution or production tools. | The red-team report covers the listed domains, reports detection, unsafe-action, and containment measures, and records the pre-validation result. |
@@ -142,10 +142,10 @@ The testing an agent passes before release, including threat modeling, attacks o
 
 ## Supply chain and AIBOM
 
-How models, data, dependencies, and suppliers are recorded in the AIBOM, verified, and admitted through the internal mirror.
+This section defines how models, data, dependencies, and suppliers are recorded in the AIBOM, verified, and admitted through the internal mirror.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Resources | Knowledge Retrieval Security | Training data and retrieval corpora should be screened before use for invisible characters, homoglyphs, encoded strings, hidden document layers and metadata instructions, and image or audio perturbations, with flagged items quarantined and unverified media kept out unless its provenance is recorded. | A seeded invisible-character trigger in a test corpus is quarantined. |
 | Inference | External Service / LLM | Teams should detect supplier model changes by comparing the model ID recorded on each call with the AIBOM and by tracking provider changelogs and sub-processor notices. | A test provider alias change is detected within one review cycle. |
 | Platform and Containment | AIBOM and Provenance Gate | Each production agent should have a graph AIBOM that agents cannot write, recording its models, prompts, tools, servers, packages, datasets, embeddings, adapters, guardrails, sub-agents, and connectors with version, hash, owner, and license, separating declared, reachable, and observed dependencies, and blocking promotion when it is missing or stale. | A sampled AIBOM validates in a standard BOM format and lists the named component types, and a test promotion with a stale AIBOM is refused. |
@@ -155,10 +155,10 @@ How models, data, dependencies, and suppliers are recorded in the AIBOM, verifie
 
 ## Incident response
 
-How an agent, a server, or a class of workloads is stopped, investigated, and restored after a compromise or failure.
+This section defines how an agent, a server, or a class of workloads is stopped, investigated, and restored after a compromise or failure.
 
 | Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
+|---|---|---|---|
 | Control Plane | Kill Switch & Circuit Breakers | An operator should be able to disable one agent or server, or halt the workloads of a given type, model, server version, or tenant, within minutes from infrastructure the halted workloads cannot reach. | A drill measures the time to disable one server and the time to halt one class. |
 | Control Plane | Human Oversight (HITL) | An incident in a GITL class should demote that class to HITL during containment, before root-cause work begins. | Register history shows the demotion before the root-cause record. |
 | Platform and Containment | CI/CD Pipeline | The response team should rebuild compromised workloads from known-good images and rotate exposed credentials from a clean environment. | Rebuild and rotation records exist for the incidents sampled. |
@@ -212,5 +212,6 @@ Each row names the external controls a recommendation area supports. Support is 
 | Validation and evaluation | A.6.2.4, A.6.2.5, A.6.2.7, A.5.2 | Measure | All ten as test coverage |
 | Supply chain and AIBOM | A.4.3 to A.4.5, A.7.5, A.10.2, A.10.3 | Govern, Map | ASI04 Agentic Supply Chain Vulnerabilities |
 | Incident response | A.6.2.8, A.8.4 | Manage | ASI08, ASI10 |
+| Lifecycle and change | A.5.2, A.6.1.2, A.6.2.4 to A.6.2.7 | Govern | ASI10 |
 | MCP profile | A.4.4, A.6.2.3, A.10.2, A.10.3 | Manage | ASI02, ASI03, ASI04 |
 | A2A profile | A.3.2, A.4.4, A.7.5, A.9.4, A.10.2 | Manage | ASI07 Insecure Inter-Agent Communication, ASI08, ASI03 |
