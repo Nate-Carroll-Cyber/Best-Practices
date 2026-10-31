@@ -1,7 +1,5 @@
 # Enterprise Agentic AI Standard
 
-Oct 29, 2026 · @Nate
-
 This standard sets recommendations for agentic AI systems the enterprise builds, buys, or runs, including systems that use the Model Context Protocol or the Agent-to-Agent protocol.
 
 ## Purpose and scope
