@@ -43,7 +43,7 @@ Each item in this standard is a recommendation and uses should. A recommendation
 
 ## Identity and credentials
 
-Identity and access management owns these recommendations, and the agent platform owner produces the evidence.
+How agents, servers, and gateways prove who they are, and how their credentials are issued, scoped, stored, and revoked.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -52,12 +52,12 @@ Identity and access management owns these recommendations, and the agent platfor
 | Identity and Trust | Access & Entitlements | Agent credentials should be issued per task, expire within minutes, name their target resource under RFC 8707, bind to the workload by mTLS or DPoP, and stay separate across development, staging, and production. | A token replayed from a second workload and a development credential are both refused at the production endpoints tested. |
 | Identity and Trust | Identity Provider | The token service should revoke the delegation chains and pending approvals of a disabled person within the published latency and suspend any agent whose only owner is disabled. | Disabling a test user revokes the chains they started within the latency target. |
 | Control Plane | Registries | Each agent, server, and tool should carry a persistent registry identifier that the broker stamps on each decision record. | A registry export joins to a sampled day of broker records. |
-| Enforcement | Secrets Redaction | Logs, tool output, and error payloads should pass secret detection that combines allowlisted fields with pattern matching before they are stored or displayed. | A test credential under an unexpected field name does not reach the log. |
-| Platform and Containment | Policy-as-Code | Permission changes and repository configuration that registers MCP servers or pre-approves tools should pass policy-as-code review and agent owner approval before they load. | An unapproved MCP definition committed to a test repository is unreachable at session start. |
+| Enforcement | Secrets Redaction | Before logs, tool output, or error payloads are stored or displayed, a secret scanner should check them against known secret patterns and keep only allowlisted fields. | A test credential under an unexpected field name does not reach the log. |
+| Platform and Containment | Policy-as-Code | A permission change, or a repository setting that adds an MCP server or pre-approves a tool, should load only after policy-as-code review and the agent owner’s approval. | An unapproved MCP definition committed to a test repository is unreachable at session start. |
 
 ## Authorization and enforcement
 
-The CISO's organization runs the enforcement broker as an enterprise service, and every agent in scope routes through it.
+How an enforcement broker checks each consequential action an agent proposes and approves or denies it before it runs.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -74,7 +74,7 @@ The CISO's organization runs the enforcement broker as an enterprise service, an
 
 ## Execution environment
 
-The agent platform owner builds and operates the sandbox and network controls below.
+The sandbox, network, and hardware isolation that agent code, tool calls, and model weights run inside.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -87,7 +87,7 @@ The agent platform owner builds and operates the sandbox and network controls be
 
 ## Context, memory, and data
 
-The agent platform owner implements these controls, and the data owner approves every source an agent reads.
+How content entering an agent’s context, memory, and retrieval stores is labeled, screened, isolated, and kept current.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -104,7 +104,7 @@ The agent platform owner implements these controls, and the data owner approves 
 
 ## Human oversight and decision rights
 
-The agent owner maintains the decision-rights register, the broker enforces it, and security operations reviews approver quality.
+Which action classes need a person’s approval, how each approval request is built and bound to its action, and how approver quality is checked.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -117,7 +117,7 @@ The agent owner maintains the decision-rights register, the broker enforces it, 
 
 ## Audit and observability
 
-Security operations owns detection and the audit store, and the agent platform owner wires every component into them.
+What each agent action records, where those records are kept, and what security operations detects from them.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -130,7 +130,7 @@ Security operations owns detection and the audit store, and the agent platform o
 
 ## Validation and evaluation
 
-The agent platform owner runs CI and release evaluation, and an independent team runs red teaming.
+The testing an agent passes before release, including threat modeling, attacks on the enforcement point, release evaluation, and red teaming.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -142,7 +142,7 @@ The agent platform owner runs CI and release evaluation, and an independent team
 
 ## Supply chain and AIBOM
 
-The agent owner owns each AIBOM, and the agent platform owner runs the build pipeline and the internal mirror.
+How models, data, dependencies, and suppliers are recorded in the AIBOM, verified, and admitted through the internal mirror.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -155,7 +155,7 @@ The agent owner owns each AIBOM, and the agent platform owner runs the build pip
 
 ## Incident response
 
-Security operations leads response, and the agent platform owner supplies the kill switches and rebuilds.
+How an agent, a server, or a class of workloads is stopped, investigated, and restored after a compromise or failure.
 
 | Plane | Capability | Recommendation | Evidence |
 | --- | --- | --- | --- |
@@ -165,18 +165,6 @@ Security operations leads response, and the agent platform owner supplies the ki
 | Observability | Forensic Capture | Responders should scope each incident from the AIBOM version in force at the earliest sign of compromise, using at least two record streams the agent could not write and a review of earlier runs of the same model, workload type, or infrastructure. | The incident record cites the AIBOM version, the record streams used, and the earlier runs checked. |
 | Governance | Incident Response | Each production agent should have a drilled response plan that treats a broker or gateway outage as an incident, halts runs that exchanged messages with the compromised run, revokes the credentials it held, used, or found, purges affected memory and caches, locks touched model weights, and quarantines training data from the incident window. | The latest drill record shows the timings, the connected runs halted, and the revocations, purges, and quarantines performed. |
 | Governance | Legal and Regulatory | Privacy and Legal should assess regulatory duties in each incident, including the report to the competent authorities and the user notice that TC260 Framework 3.0 requires under Chinese jurisdiction. | The incident record holds the notification decision and its owner. |
-
-## Lifecycle and change
-
-The agent owner moves an agent through its phases, and each move needs evidence rather than elapsed time.
-
-| Plane | Capability | Recommendation | Evidence |
-| --- | --- | --- | --- |
-| Control Plane | Registries | The registry should move agents, servers, and tools through Approved, Active, Suspended, Deprecated, and Retired states with a recorded approver and withhold credentials from inactive identities. | A test identity in each inactive state is refused a credential. |
-| Platform and Containment | Policy-as-Code | Each change to code, prompts, tools, servers, permissions, model, sandbox profile, network policy, or register entry should pass the pipeline with a named author and reviewer, including changes an agent makes to itself. | Sampled changes in the review period have an author and a reviewer. |
-| Governance | Risk Classification and Intake | Before development, the agent owner should record the agent's purpose, prohibited uses, affected people, data classes, autonomy limit, trifecta scorecard, any TC260 grade or MAS materiality rating, and measurable ceilings on failed tool calls, unintended actions, and reversals that are reviewed each quarter. | The classification record shows its approvals, and the quarterly review compares each ceiling with the measured result. |
-| Governance | Agent Lifecycle and Ownership | The agent owner should take each agent through isolated evaluation, internal staging, limited production, general production, and retirement, with evidence, a tested rollback, and security, operations, product, and compliance sign-off at each step. | Sampled transition and retirement records carry the four sign-offs, a rollback test, and the exit checklist. |
-| Governance | Safety | Production approval should require closed critical findings, adversarial test results, a verified emergency stop, a current AIBOM, a register entry for each action class, and sign-off from the agent owner, the platform owner, and the CISO delegate, with the AI Governance Board added for agents that take irreversible or externally visible actions. | The gate record carries each item with its signer and date. |
 
 ## MCP profile
 
@@ -224,6 +212,5 @@ Each row names the external controls a recommendation area supports. Support is 
 | Validation and evaluation | A.6.2.4, A.6.2.5, A.6.2.7, A.5.2 | Measure | All ten as test coverage |
 | Supply chain and AIBOM | A.4.3 to A.4.5, A.7.5, A.10.2, A.10.3 | Govern, Map | ASI04 Agentic Supply Chain Vulnerabilities |
 | Incident response | A.6.2.8, A.8.4 | Manage | ASI08, ASI10 |
-| Lifecycle and change | A.5.2, A.6.1.2, A.6.2.4 to A.6.2.7 | Govern | ASI10 |
 | MCP profile | A.4.4, A.6.2.3, A.10.2, A.10.3 | Manage | ASI02, ASI03, ASI04 |
 | A2A profile | A.3.2, A.4.4, A.7.5, A.9.4, A.10.2 | Manage | ASI07 Insecure Inter-Agent Communication, ASI08, ASI03 |
