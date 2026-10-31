@@ -155,7 +155,7 @@ An agent that reaches a tool through the Model Context Protocol should follow th
 | Orchestration | Agent Runtime | The MCP host should connect only to registered servers whose manifest signature, version, and workload identity check out, route calls through the MCP gateway so each call receives its own broker decision, treat a tool with no annotations as destructive, non-idempotent, and open-world, and keep client credentials in the OS keychain or a secrets manager. | A host configured with an unregistered server fails to connect, and an unannotated test tool is gated as destructive. |
 | Governance | Supply Chain and Third Party | A procured product that acts as an MCP host or server should be classified on what it reaches, checked for maintenance status before adoption, send its audit log to the SIEM, have its MCP-related CVEs and advisories tracked to an owner and patch state, and have each unmet recommendation recorded in the vendor gap register. | Each embedded host or server has a gap register entry and a named advisory owner. |
 
-## A2A profile
+## A2A profile (In Development)
 
 An agent that sends or receives agent-to-agent traffic should follow these recommendations in addition to the general recommendations in this standard.
 
@@ -175,7 +175,7 @@ An agent that sends or receives agent-to-agent traffic should follow these recom
 
 ## Framework mapping
 
-Each row names the external controls a recommendation area supports. Support is not a claim that the area satisfies those controls. Privacy and Legal should confirm applicability for each deployment. ISO/IEC 27001 or SOC 2 alignment should be stated only after auditor review.
+Each row names the external controls a recommendation area supports. Support is not a claim that the area satisfies those controls. Privacy and Legal should confirm applicability for each deployment. 
 
 | Recommendation area | ISO/IEC 42001:2023 Annex A | NIST AI RMF | OWASP Top 10 for Agentic Applications 2026 |
 |---|---|---|---|
