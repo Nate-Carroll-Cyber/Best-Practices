@@ -130,7 +130,7 @@ This section defines how models, data, dependencies, and suppliers are recorded 
 
 | Plane | Capability | Recommendation | Evidence |
 |---|---|---|---|
-| Resources | Knowledge Retrieval Security | 	Training data and documents loaded into RAG knowledge bases should be scanned before use for hidden text, such as invisible characters, look-alike characters, encoded strings, and instructions hidden in document layers or metadata, and flagged files should be held for review. | A seeded invisible-character trigger in a test corpus is quarantined. |
+| Resources | Knowledge Retrieval Security | Training data and documents loaded into RAG knowledge bases should be scanned before use for hidden text, such as invisible characters, look-alike characters, encoded strings, and instructions hidden in document layers or metadata, and flagged files should be held for review. | A document with hidden white text or invisible characters is held for review before it reaches the knowledge base. |
 | Inference | External Service / LLM | Teams should detect supplier model changes by comparing the model ID recorded on each call with the AIBOM and by tracking provider changelogs and sub-processor notices. | A test provider alias change is detected within one review cycle. |
 | Platform and Containment | AIBOM and Provenance Gate | Each production agent should have an AIBOM that agents cannot write, recording its models, prompts, tools, servers, packages, datasets, embeddings, adapters, guardrails, sub-agents, and connectors with version, hash, owner, and license, separating declared, reachable, and observed dependencies, and blocking promotion when it is missing or stale. | A sampled AIBOM validates in a standard BOM format and lists the named component types, and a test promotion with a stale AIBOM is refused. |
 | Platform and Containment | Artifact Mirror | Dependencies, images, models, plugins, and servers should be pinned to reviewed versions and pulled only through an internal mirror that verifies digest and signature, rejects model formats that run code on load, and accepts new entries only from its own service identity with a recorded approver. | A CI build that uses an unpinned version or pulls straight from a public registry fails, and the mirror rejects a pickle-format model file. |
@@ -180,9 +180,6 @@ Each row names the external controls a recommendation area supports. Support is 
 | Context, memory, and data | A.7.2 to A.7.6, A.9.4 | Map, Manage | ASI01 Agent Goal Hijack, ASI06 Memory and Context Poisoning |
 | Human oversight and decision rights | A.9.3, A.6.1.3, A.4.6 | Manage | ASI09 Human-Agent Trust Exploitation |
 | Audit and observability | A.6.2.8, A.6.2.6 | Govern, Measure | ASI10 Rogue Agents, ASI08 Cascading Failures |
-| Validation and evaluation | A.6.2.4, A.6.2.5, A.6.2.7, A.5.2 | Measure | All ten as test coverage |
 | Supply chain and AIBOM | A.4.3 to A.4.5, A.7.5, A.10.2, A.10.3 | Govern, Map | ASI04 Agentic Supply Chain Vulnerabilities |
-| Incident response | A.6.2.8, A.8.4 | Manage | ASI08, ASI10 |
-| Lifecycle and change | A.5.2, A.6.1.2, A.6.2.4 to A.6.2.7 | Govern | ASI10 |
 | MCP profile | A.4.4, A.6.2.3, A.10.2, A.10.3 | Manage | ASI02, ASI03, ASI04 |
 | A2A profile | A.3.2, A.4.4, A.7.5, A.9.4, A.10.2 | Manage | ASI07 Insecure Inter-Agent Communication, ASI08, ASI03 |
