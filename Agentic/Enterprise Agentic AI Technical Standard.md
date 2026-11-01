@@ -155,7 +155,7 @@ An agent that reaches a tool through the Model Context Protocol should follow th
 | Orchestration | Agent Runtime | The MCP host should connect only to registered servers whose manifest signature, version, and workload identity check out, route calls through the MCP gateway so each call receives its own broker decision, treat a tool with no annotations as destructive, non-idempotent, and open-world, and keep client credentials in the OS keychain or a secrets manager. | A host configured with an unregistered server fails to connect, and an unannotated test tool is gated as destructive. |
 | Governance | Supply Chain and Third Party | A procured product that acts as an MCP host or server should be classified on what it reaches, checked for maintenance status before adoption, send its audit log to the SIEM, have its MCP-related CVEs and advisories tracked to an owner and patch state, and have each unmet recommendation recorded in the vendor gap register. | Each embedded host or server has a gap register entry and a named advisory owner. |
 
-## A2A profile (In Development)
+## A2A profile
 
 An agent that sends or receives agent-to-agent traffic should follow these recommendations in addition to the general recommendations in this standard.
 
@@ -188,4 +188,4 @@ Each row names the external controls a recommendation area supports. Support is 
 | Validation and evaluation | A.6.2.4, A.6.2.5, A.6.2.7, A.5.2 | Measure | All ten as test coverage |
 | Supply chain and AIBOM | A.4.3 to A.4.5, A.7.5, A.10.2, A.10.3 | Govern, Map | ASI04 Agentic Supply Chain Vulnerabilities |
 | MCP profile | A.4.4, A.6.2.3, A.10.2, A.10.3 | Manage | ASI02, ASI03, ASI04 |
-| A2A profile (In Dev) | A.3.2, A.4.4, A.7.5, A.9.4, A.10.2 | Manage | ASI07 Insecure Inter-Agent Communication, ASI08, ASI03 |
+| A2A profile | A.3.2, A.4.4, A.7.5, A.9.4, A.10.2 | Manage | ASI07 Insecure Inter-Agent Communication, ASI08, ASI03 |
