@@ -39,7 +39,7 @@ Each item in this standard is a recommendation and uses should. A recommendation
 | Anchored objective | The user's goal, fixed in system instructions at session start. |
 | Tool manifest | The signed, versioned definition of a tool, Agent Card, OpenAPI document, plugin, or skill. |
 | AIBOM | The AI bill of materials for a system, covering its models, software, data, prompts, tools, connectors, and agents. |
-| Shadow agent or server | An agent or server found in the estate with no Approved or Active registry entry. |
+| Shadow agent or server | An agent or server found in the enterprise with no Approved or Active registry entry. |
 
 ## Identity and credentials
 
