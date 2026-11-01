@@ -1,10 +1,10 @@
 # Enterprise Agentic AI Standard
 
-This standard sets recommendations for agentic AI systems the enterprise builds, buys, or runs, including systems that use the Model Context Protocol or the Agent-to-Agent protocol.
+The standard applies to every agentic AI system the enterprise builds, buys, or runs, including systems that use the Model Context Protocol or the Agent-to-Agent protocol. System owners design new agentic systems to this standard, security assesses running systems against it, and procurement records the gap for a product that cannot meet a recommendation.
 
 ## Purpose and scope
 
-An agentic AI system is any AI system that calls tools, calls external services, keeps state between steps, delegates to other agents, or changes anything outside the model runtime. The Agentic AI Policy states why each recommendation exists, and the Agentic AI Technical Standards state how each one is tested.
+An agentic AI system is any AI system that calls tools, calls external services, keeps state between steps, delegates to other agents, or changes anything outside the model runtime. 
 
 | System | How this standard applies |
 | --- | --- |
@@ -45,7 +45,7 @@ Each item in this standard is a recommendation and uses should. A recommendation
 
 This section defines how agents, servers, and gateways prove who they are and how their credentials are issued, scoped, stored, and revoked.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 |---|---|---|---|
 | Identity and Trust | Cryptographic Agent Identity | Each agent, sub-agent, MCP server, and gateway should authenticate with its own workload identity from the enterprise identity authority, carried in a URI SAN or signed claim rather than a certificate Common Name. | A test connection that presents identity only in the Common Name is refused. |
 | Identity and Trust | Secrets & Trust | Tools should resolve secrets from opaque handles at execution time so that the model, prompts, memory, logs, and source control hold no credentials, with signing keys kept in a KMS or HSM and static, long-lived, or leaked tokens retired and rotated. | A credential planted in a dependency error is redacted before it reaches the model or storage. |
@@ -59,7 +59,7 @@ This section defines how agents, servers, and gateways prove who they are and ho
 
 This section defines how an enforcement broker checks each consequential action an agent proposes and approves or denies it before it runs.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 |---|---|---|---|
 | Identity and Trust | Access & Entitlements | Each agent should have only the tools, data, and permissions its task needs, and those permissions should be reviewed regularly. | Effective permissions in a sample match documented permissions. |
 | Control Plane | Policy Engine (PDP) | Before allowing an action, the broker should confirm who the user and the agent are, check the request against the tool’s approved version and input format, and then decide whether the action is permitted, including any request to loosen the session’s approval settings. | A schema-valid test request to an unauthorized recipient is denied with a 403, and an agent-requested mode change is denied. |
@@ -76,7 +76,7 @@ This section defines how an enforcement broker checks each consequential action 
 
 This section defines the sandbox, network, and hardware isolation that agent code, tool calls, and model weights run inside.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 |---|---|---|---|
 | Orchestration | Agent Runtime | Untrusted code and high-risk tools should run in disposable non-root sandboxes on a Firecracker or Kata microVM runtime class with Linux capabilities dropped, a read-only root filesystem, workload-tested seccomp, resource limits, no network by default, and no credentials or host mounts. | Admission control rejects a test pod that lacks an approved runtime class or one of these settings. |
 | Orchestration | Sandbox Egress | Sandbox egress should be blocked at both the sandbox and the cluster or cloud layer except through one allowlisted and logged proxy, with no metadata endpoint access and no internet access for workloads that run generated code or hold all three trifecta legs. | Tested disallowed destinations are blocked at both layers, and a metadata request fails. |
@@ -89,7 +89,7 @@ This section defines the sandbox, network, and hardware isolation that agent cod
 
 This section defines how content entering an agent's context, memory, and retrieval stores is labeled, screened, isolated, and kept current.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 |---|---|---|---|
 | Enforcement | Prompt, Response & Inline DLP | Content should carry source and trust labels that survive compaction and storage, be scanned for injection and concealment on the way into context, and be checked for destination, classification, secrets, and personal data on exit. | A test document carrying invisible-character text is flagged before it enters context, and a restricted value in a tool parameter bound for an outside destination is blocked. |
 | Enforcement | Enforcement Broker (PEP) | Context compaction should be a broker decision that keeps security findings and refusals and preserves the pre-compaction version. | A compaction keeps an out-of-scope finding and a prior refusal. |
@@ -103,7 +103,7 @@ This section defines how content entering an agent's context, memory, and retrie
 
 This section defines which action classes need a person's approval, how each approval request is built and bound to its action, and how approver quality is checked.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 |---|---|---|---|
 | Control Plane | Human Oversight (HiTL) | The broker should check each action against the decision-rights register and send high-impact or irreversible actions to a person for approval, showing the exact action that will run, confirming the approver still holds the right role, voiding the approval if the action changes, and limiting how many approvals one person handles per hour. | In testing, an action with no register entry is denied, a parameter changed after approval blocks execution, and a burst of approval requests queues past the cap. |
 | Control Plane | Policy Engine (PDP) | The broker should escalate a GiTL action to HiTL when signals from outside the model, such as the amount, data class, target system, anomaly score, or a recent breaker trip, cross the owner's threshold, and it should not use the model's own stated confidence as a signal. | A GiTL action with a test anomaly score above the threshold goes to an approver. |
@@ -115,7 +115,7 @@ This section defines which action classes need a person's approval, how each app
 
 This section defines what each agent action records, where those records are kept, and what security operations detects from them.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 |---|---|---|---|
 | Identity and Trust | Identity Provider | Records should take the initiating person from a validated OIDC token or mTLS-bound assertion and label sessions without one as self-asserted. | A test session with no assertion is labeled self-asserted. |
 | Platform and Containment | Zero Trust Control | Each network-reachable component, including debug and health-check servers, should use one shared library that authenticates callers, caps request size, rate-limits by identity, returns fixed error codes with consistent status codes, and keeps stack traces and downstream error text out of model and caller responses. | In testing, oversized and over-limit requests are rejected before parsing, an unauthorized request returns a non-retryable 403, and a downstream error string does not reach the model. |
@@ -128,7 +128,7 @@ This section defines what each agent action records, where those records are kep
 
 This section defines how models, data, dependencies, and suppliers are recorded in the AIBOM, verified, and admitted through the internal mirror.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 |---|---|---|---|
 | Resources | Knowledge Retrieval Security | Training data and documents loaded into RAG knowledge bases should be scanned before use for hidden text, such as invisible characters, look-alike characters, encoded strings, and instructions hidden in document layers or metadata, and flagged files should be held for review. | A seeded invisible-character trigger in a test corpus is quarantined. |
 | Inference | External Service / LLM | Teams should detect supplier model changes by comparing the model ID recorded on each call with the AIBOM and by tracking provider changelogs and sub-processor notices. | A test provider alias change is detected within one review cycle. |
@@ -141,7 +141,7 @@ This section defines how models, data, dependencies, and suppliers are recorded 
 
 An agent that reaches a tool through the Model Context Protocol should follow these recommendations in addition to the general recommendations in this standard.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 | --- | --- | --- | --- |
 | Control Plane | Registries | Each MCP server and tool should be registered with a signed, versioned manifest bound to its definition hash, with the tool annotations `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` inside the signed definition, treated as destructive until the registry classifies it, and blocked after adding a tool, widening a scope, lowering a declared risk annotation, or reaching a new destination until the agent owner consents again. | A test unregistered server gets no credential, a server that adds a tool after approval is blocked, and a tool whose `destructiveHint` changes from true to false after approval is quarantined. |
 | Enforcement | MCP Gateway | Each tool call should pass through the tenant's MCP gateway, which checks the server's workload identity against the registry, exchanges the agent's token for a new downstream token under RFC 8693, serves tool definitions from the signed manifest, scans manifest fields as untrusted text, and returns each tool result to the agent as untrusted data minimized to the fields the task needs with personal data and secrets redacted before the model sees it. | A direct connection fails, a forwarded token is rejected, a schema change on the live server changes nothing the agent sees, and a seeded instruction in a test tool result causes no change in the agent's next action. |
@@ -159,7 +159,7 @@ An agent that reaches a tool through the Model Context Protocol should follow th
 
 An agent that sends or receives agent-to-agent traffic should follow these recommendations in addition to the general recommendations in this standard.
 
-| Plane | Capability | Recommendation | Evidence |
+| Plane | Capability | Recommendation | Verification |
 | --- | --- | --- | --- |
 | Control Plane | Registries | The registry should record each agent's owner, purpose, model, called agents, tools, data sources, trifecta scorecard, and state, and serve a signed, pinned Agent Card that cannot change without re-approval. | A change to a live Agent Card has no effect until it is re-approved. |
 | Enforcement | Agent Gateway | Agent-to-agent messages should pass through the agent gateway, which authenticates the caller, allows calls only to registered agents, treats each delegation as a broker decision no wider than the parent's scope, and hashes each handoff at send and receipt. | A direct connection fails, and a delegation wider than the parent's scope is rejected. |
