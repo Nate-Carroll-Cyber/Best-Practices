@@ -2,7 +2,7 @@
 
 ## How to use this
 
-Fourteen questions. Each one targets a claim that is commonly made about agent deployments and commonly untrue. The reviewer asks the question, records the answer verbatim, requests the listed evidence, runs the verification, and scores the item. The questionnaire is complete when every item has a score and every score below 3 has an entry in the findings register with a gap type.
+Fifteen questions. Each one targets a claim that is commonly made about agent deployments and commonly untrue. The reviewer asks the question, records the answer verbatim, requests the listed evidence, runs the verification, and scores the item. The questionnaire is complete when every item has a score and every score below 3 has an entry in the findings register with a gap type.
 
 Interview answers are recorded but never scored on their own. Only evidence and verification results move the score. Interview evidence caps an item at 1 even where the answer is detailed and credible.
 
@@ -22,11 +22,11 @@ Every score of 1 or 2 carries one or more gap types in the findings register. Do
 
 An item whose evidence was requested and not produced within the review window is marked Not assessable rather than scored. It counts as unknown in the summary and blocks the strict figure, since the reviewer could not form a view.
 
-Items 1, 2, 3, 7, 8 and 13 are gating. A score below 3 on any gating item blocks production approval regardless of the total.
+Items 1, 2, 3, 7, 8, 13 and 15 are gating. A score below 3 on any gating item blocks production approval regardless of the total. Item 15 applies only where the system acts for signed-in people. A system with no user-delegated path records Item 15 as Not applicable after the reviewer confirms that no user token or delegation grant reaches it, and a Not applicable item is excluded from every figure and count.
 
 ## Reviewer inputs
 
-Before the session, obtain: the architecture diagram with trust boundaries, the sandbox namespace manifests and admission policies, the egress proxy configuration, one full session transcript with correlation IDs, one approval record, the Inspect (or equivalent) task file and one eval log, the tool registry or manifest store, the signed AIBOM for the system under review with its promotion gate configuration, the retirement record for one recently retired agent or tool server, the decision-rights register export with its change history and one promotion or demotion record, the reversal-rate report per GITL action class for the last observation window, the seeded-error placement and outcome records for the last 30 days, and read access to a representative non-production cluster.
+Before the session, obtain: the architecture diagram with trust boundaries, the sandbox namespace manifests and admission policies, the egress proxy configuration, one full session transcript with correlation IDs, one approval record, the Inspect (or equivalent) task file and one eval log, the tool registry or manifest store, the signed AIBOM for the system under review with its promotion gate configuration, the retirement record for one recently retired agent or tool server, the decision-rights register export with its change history and one promotion or demotion record, the reversal-rate report per GITL action class for the last observation window, the seeded-error placement and outcome records for the last 30 days, one on-behalf-of (OBO) exchange record with the issued downstream token's claims, the consent grant it ran under, and the matching resource-side authorization log, and read access to a representative non-production cluster.
 
 ---
 
@@ -258,7 +258,7 @@ Score: ___ Notes: ___
 **Evidence required.**
 - PDP deployment (OPA, Cedar, or equivalent) outside the orchestrator process
 - Decision log destination with Object Lock or equivalent, not writable by the orchestrator
-- One approval record showing canonical action hash, approver principal from an IdP assertion, policy version, timestamp, correlation ID
+- One approval record showing canonical action hash, approver principal from an IdP assertion, policy version, timestamp, correlation ID, and, where the action runs for a person, the subject and actor chain inside the hashed representation (Item 15)
 - Orchestrator code path showing hash re-check immediately before exec
 - Timeout behavior (must be deny)
 - List of gated action classes (tool calls, memory writes, retrieval, compaction, subagent start, tool registration, publication to run-readable locations), each resolving to a decision-rights register entry (Item 13), with the entry version recorded on every decision record
@@ -278,6 +278,7 @@ Score: ___ Notes: ___
 - Are memory writes and compaction gated
 - Is the gated class list derived from the decision-rights register or maintained separately, and what happens when the two disagree (Item 13)
 - Can the decision log corroborate the transcript during a compromise window
+- Does a change to the person acted for or to the actor chain void an approval the way a parameter change does (Item 15)
 - What retention period applies to the decision log, who owns that decision, and does it meet the floor in each jurisdiction of operation (China's TC260 Framework 3.0 sets at least six months for operational logs)
 - Does the orchestrator agent hold any standing credential to source data or destinations, or does it only receive result content that a downstream agent already retrieved under its own scoped credential
 
@@ -296,8 +297,8 @@ Score: ___ Notes: ___
 **Why it matters.** Vault answers where the secret rests, not where it travels. A secret injected into the pod as an environment variable or file is readable by model-generated code and is therefore in the model's context.
 
 **Evidence required.**
-- Sandbox pod spec showing no secret volumes and no credential environment variables
-- Description of the handle resolution path and the process that performs it
+- Sandbox pod spec showing no secret volumes, no credential environment variables, no user access token, and no refresh token
+- Description of the handle resolution path and the process that performs it, including the OBO exchange where the agent acts for a person (Item 15)
 - Vault lease TTL configuration matched to session TTL
 - Teardown activity that revokes leases and STS sessions
 - Bootstrap credential scope (Vault auth only)
@@ -310,6 +311,7 @@ Score: ___ Notes: ___
 - "Mounted at /vault/secrets"
 - "Only the tool sees it" when the tool runs inside the sandbox
 - "We redact secrets from logs" offered as the control
+- "The agent holds the user's token to call APIs as them" (Item 15)
 - Rotation interval longer than a session
 
 **Follow-ups.**
@@ -318,7 +320,7 @@ Score: ___ Notes: ___
 
 **Verification.**
 ```
-kubectl exec <sandbox-pod> -n <ns> -- env | grep -iE 'token|key|secret|password|aws_|vault'
+kubectl exec <sandbox-pod> -n <ns> -- env | grep -iE 'token|key|secret|password|aws_|vault|assertion'
 kubectl exec <sandbox-pod> -n <ns> -- find / -path /proc -prune -o -type f \( -name '*.json' -o -name '*.env' -o -name '*.pem' \) -print 2>/dev/null | head
 kubectl get pod <sandbox-pod> -n <ns> -o jsonpath='{.spec.volumes[*].secret.secretName}'
 ```
@@ -340,7 +342,7 @@ Score: ___ Notes: ___
 - Session labels for workload type, agent type, model family, tool servers
 - Stop path that selects by label from the registry
 - Identity the stop runs under and confirmation the workload pool cannot assume it
-- Lease and STS revocation as part of the stop
+- Lease, STS, exchanged OBO token, and standing delegation grant revocation as part of the stop (Item 15)
 - Admission deny list preventing restart
 - Latch behavior for privileged, destructive, financial, and externally visible action classes, and class-wide latch with register demotion when the tripping action ran under a GITL class (Item 13)
 - Last test date and measured time to confirmed halt
@@ -359,7 +361,7 @@ Score: ___ Notes: ___
 - Is halt confirmed by observation or assumed from the command returning
 - Who is authorized and who is paged
 
-**Verification.** Run the stop against a synthetic class in staging. Confirm independently that no pods with the label remain, every tagged Vault lease is revoked, every tagged STS session is invalidated in CloudTrail, and the egress proxy log shows no requests from the class after the stop timestamp. If any confirmation requires asking the orchestrator, the stop depends on the thing it stops.
+**Verification.** Run the stop against a synthetic class in staging. Confirm independently that no pods with the label remain, every tagged Vault lease is revoked, every tagged STS session is invalidated in CloudTrail, every exchanged token issued to the class fails at the resource, and the egress proxy log shows no requests from the class after the stop timestamp. If any confirmation requires asking the orchestrator, the stop depends on the thing it stops.
 
 Score: ___ Notes: ___
 
@@ -383,7 +385,7 @@ Score: ___ Notes: ___
 - Unregistered-endpoint alerting
 - Approved tool definition hashes recorded in the AIBOM (Item 11)
 
-**Pass criteria.** Digest pinning, full-schema scan before context, drift blocks connection, capability change triggers re-approval, responses validated, registration gates deployment, connections to unregistered endpoints alert, approved definition hashes match the AIBOM. Client token is exchanged for an audience-scoped downstream token, never forwarded.
+**Pass criteria.** Digest pinning, full-schema scan before context, drift blocks connection, capability change triggers re-approval, responses validated, registration gates deployment, connections to unregistered endpoints alert, approved definition hashes match the AIBOM. Client token is exchanged for an audience-scoped downstream token, never forwarded, with the person as subject and the gateway or server added to the actor chain rather than replacing the agent (Item 15).
 
 **Red-flag answers (score 0).**
 - "We only connect to approved MCP servers"
@@ -475,7 +477,7 @@ Score: ___ Notes: ___
 **Evidence required.**
 - Registry lifecycle states including a retired state, with the exit checks required to reach it
 - Retirement record for one recently retired agent or tool server, showing each check and who performed it
-- Revocation evidence for service accounts, interface permissions, Vault leases, STS sessions, and third-party authorizations
+- Revocation evidence for service accounts, interface permissions, Vault leases, STS sessions, third-party authorizations, per-person consent grants, and standing delegation grants (Item 15)
 - Cancellation evidence for subscriptions, auto-renewals, webhooks, and scheduled jobs
 - Backup record for retained session records, configuration, knowledge-base files, and logs, tied to the retention decision
 - Cleanup evidence for residual files, plugin and skill configurations, cached credentials, DNS records, and public entry points
@@ -501,7 +503,7 @@ kubectl get pods,svc,ingress,cronjob -A -l agent=<retired-name>
 kubectl get serviceaccount -A | grep <retired-name>
 dig +short <retired-endpoint>
 ```
-All three must return nothing. Then confirm that the retired workload identity fails to authenticate, its Vault leases and STS sessions are revoked, its third-party authorizations are absent from each provider's console, and the egress proxy log shows no requests from it after the retirement timestamp. Attempt a deployment under the retired identity and confirm registration refuses it. Anything still live is a finding.
+All three must return nothing. Then confirm that the retired workload identity fails to authenticate, its Vault leases and STS sessions are revoked, its third-party authorizations are absent from each provider's console, no person's consent grant or may_act entry still names it, and the egress proxy log shows no requests from it after the retirement timestamp. Attempt a deployment under the retired identity and confirm registration refuses it. Anything still live is a finding.
 
 Score: ___ Notes: ___
 
@@ -587,6 +589,49 @@ Score: ___ Notes: ___
 
 ---
 
+## Item 15. Delegated authority (OBO)
+
+**Claim being tested.** "The agent only does what the user could do."
+
+**Question.** When the agent acts for a signed-in person through an OBO exchange, what does the downstream token say about who is acting, who pre-authorized this agent to act for that person, and what narrowed the scope?
+
+**Why it matters.** A user token forwarded unchanged makes the agent indistinguishable from the person at every downstream service and in every log. An exchange with no actor credential produces the same result under a different name, since RFC 8693 states that delegation is impossible with only a subject token. A may_act pre-authorization names who may act and says nothing about what they may do, so an exchange that pre-authorizes without narrowing hands the agent the person's full scope. A refresh token held so the agent can act while the person is away is a password-grade credential wherever it sits. Red Canary's 2026 Entra Agent ID walkthrough traced an agent identity sending mail to an external recipient on behalf of a user through delegated Mail.Send, and the action was attributable only from the agent identity and the consent grant, not from the user's own activity log.
+
+**Evidence required.**
+- Description of the inbound user-token path showing validation at ingress, reference by handle afterward, and the process that performs the exchange, with confirmation it sits outside the sandbox (Item 8)
+- One issued downstream token's claims showing the person as subject, the agent as actor (the act claim under RFC 8693, or the client assertion and fmi_path under the Entra jwt-bearer flow), and the target as audience
+- Authorization-server policy or may_act configuration naming which agents may act for which people, and the refusal path for every other requester
+- Scope policy showing the issued scope is the intersection of the person's consent, the agent's registry entry, and the task
+- Resource-side authorization logic showing the person's authority and the agent's authority are both checked
+- Consent records with grantor, scope, grant time, expiry, and review date, and the revocation path from session end, consent withdrawal, and agent disablement to outstanding tokens
+- For user-absent operation, the vault location of the standing grant, its binding to one agent and one person, its expiry, and one audit event from a use of it
+- Audit record sample showing the subject, the actor chain, the consent honored, and whether the person was present
+- For targets in another trust domain, the identity chaining or Enterprise-Managed Authorization (ID-JAG) configuration
+
+**Pass criteria.** The user token never reaches the sandbox. Every OBO exchange carries the agent's actor credential, and the issued token names the person as subject and the agent as actor. An exchange from an agent not pre-authorized for the person is refused. Issued scope is the intersection. The resource denies when either authority fails. Consent is recorded, expiring, and revocable, and revocation reaches outstanding tokens within the published latency. Standing grants are vaulted, bound, expiring, and separately audited. Records show the agent as actor with the person as subject, and the person's own activity record does not show the action as theirs.
+
+**Red-flag answers (score 0).**
+- "The agent uses the user's token" or "we pass the bearer token through"
+- "The agent has the same permissions as the user" offered as the control
+- "Token exchange" with a subject token and no actor token
+- "Any agent in the tenant can act for any user" with no may_act or equivalent policy
+- "The exchanged token carries the user's scopes"
+- A refresh token in the agent's environment, configuration, or memory
+- "The audit log shows the user did it"
+
+**Follow-ups.**
+- What happens to the agent's outstanding tokens when the person's session ends, when the person withdraws consent, and when the agent identity is disabled
+- Does the resource check the agent's authority, the person's, or both
+- Where does the standing grant live, and who can read it
+- Which dialect is in use, and where the dialect cannot carry the actor in the token, where is the actor recorded
+- Can the organization list, from records alone, which people have delegated to this agent
+
+**Verification.** In staging, request one exchange with the subject token and no actor credential and confirm refusal. Request one from an agent not pre-authorized for the test person and confirm refusal. Decode one issued token and confirm the person is the subject, the agent is the actor, the audience is the target, and the scope is inside the intersection. Invoke one action the person may perform and the agent may not, and one the agent may perform and the person may not, and confirm both are denied. Withdraw the test person's consent and confirm the agent's outstanding tokens fail within the published latency. Run the Item 8 commands against the sandbox pod and treat any access token, refresh token, or assertion as a finding. Pull one delegated action's audit record and confirm it shows the agent as actor with the person as subject, and confirm the person's own activity record does not show the action as theirs. From records alone, list which people have delegated to the agent, under what scope, who granted each consent and when, and when it expires. Every unanswerable field is a finding, and an agent whose delegations cannot be enumerated fails the item.
+
+Score: ___ Notes: ___
+
+---
+
 ## Findings register
 
 | ID | Item | Score | Gap type | Finding | Severity | Owner | Planned closure | Retest date |
@@ -614,16 +659,17 @@ Severity guide. Critical for any gating item at 0 or 1. High for any gating item
 | 12. Retirement | No | |
 | 13. Decision rights | Yes | |
 | 14. Validator competence | No | |
+| 15. Delegated authority (OBO) | Yes, where the system acts for signed-in people | |
 
-Report the result as three figures and three counts, never as a total or an average.
+Report the result as three figures and three counts, never as a total or an average. Where Item 15 is Not applicable, every count below is of 14.
 
-| Figure | Definition | Count of 14 |
+| Figure | Definition | Count of 15 |
 |---|---|---|
 | Strict | Items at 3 or 4 | |
 | Documented | Strict, plus items at 2 whose gap types are Document or Measure only | |
 | Provisional | Items at 2 or above, whatever the gap type | |
 
-| Count | Definition | Count of 14 |
+| Count | Definition | Count of 15 |
 |---|---|---|
 | Foothold | Items at 2 or above | |
 | Absent | Items at 0 or 1 | |
