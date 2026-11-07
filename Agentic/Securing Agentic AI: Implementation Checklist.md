@@ -1,6 +1,6 @@
 # Securing Agentic AI: Implementation Checklist
 
-Companion to *Securing Agentic AI: Technical Implementation Framework*, Consolidated 2.11. Every item is self-contained and answerable without opening the framework. Section references in parentheses point to the source text for anyone who wants the reasoning.
+Companion to *Securing Agentic AI: Technical Implementation Framework*, Consolidated 2.12. Every item is self-contained and answerable without opening the framework. Section references in parentheses point to the source text for anyone who wants the reasoning.
 
 **How to use.** Answer each item with verified, implemented, partial, planned, exception approved, or not assessed, and record the evidence and the owner. Verified requires a produced artifact, export, configuration, test record, or drill record; interview evidence alone caps an item at implemented. Every partial carries a gap type. Document means the control runs and only the named artifact is missing. Measure means the control runs and the figure it asks for has not been computed. Scope means the control runs in part of the estate and not in another named part. Control means the mechanism is absent, misconfigured, or failed. Planned records an owner and a closure date no more than 180 days out and carries no weight. Do not report a percentage complete. Report three figures and three counts instead. Strict counts verified items only. Documented adds partials whose gap types are document or measure only, and states what the program could score by writing down and measuring what it already does. Provisional adds every remaining partial. Beneath them, count items with a foothold (verified, implemented, or partial), items absent (planned or not in place), and items unknown (not assessed). Gate A must pass before production. Gate B must pass before scaling beyond the initial cohort. Gate C runs continuously.
 
@@ -15,6 +15,7 @@ Answer before writing any control, and answer again before deployment.
 - [ ] Intended purpose, prohibited uses, affected persons, operating environment, data classifications, maximum autonomy, and accountable owner are documented (§1)
 - [ ] Decisions and actions the system can take, and their reversibility, are enumerated (§2.1)
 - [ ] External connectivity, tool privileges, multi-agent dependencies, and third-party dependencies are enumerated (§2.1)
+- [ ] It is recorded whether the system acts under its own service authority, under on-behalf-of (OBO) authority delegated by human users, or both, and whether it acts for users while they are absent (§2.1, §4.3)
 - [ ] Applicable jurisdictions and sector obligations are identified, with the organization's legal role named (§2.1, §15)
 - [ ] Where a deployment falls under Chinese jurisdiction, four expectations from TC260 AI Safety Governance Framework 3.0 are assessed against current law with counsel. Operational logs kept at least six months and audited, data collected or generated in China stored in China, user consent obtained and withdrawable before user data reaches a model or third-party tool, and major incidents reported to the competent authorities with affected users notified (§15)
 - [ ] The trifecta scorecard below is complete and dated (§7.8)
@@ -29,7 +30,7 @@ Answer before writing any control, and answer again before deployment.
 | Does it ingest untrusted content? (a cached fetch service counts as yes) | | | |
 | Can it communicate externally or take consequential action? | | | |
 
-Three yes answers require removing or constraining at least one leg, or a documented residual-risk decision with a named owner. Where the model itself is the adversary, private data plus external communication alone scores as a trifecta equivalent. Note: For an orchestrator or supervisor agent, "does it reach private data" scores on whether it holds a standing credential, not on whether it receives result content passed to it by a domain agent for routing purposes.
+Three yes answers require removing or constraining at least one leg, or a documented residual-risk decision with a named owner. Where the model itself is the adversary, private data plus external communication alone scores as a trifecta equivalent. Note: For an orchestrator or supervisor agent, "does it reach private data" scores on whether it holds a standing credential, not on whether it receives result content passed to it by a domain agent for routing purposes. OBO access to users' mailboxes, files, or records scores yes on the first question for every consenting user, and a delegated send or post permission scores yes on the third.
 
 **Owners assigned** (§2.2)
 
@@ -54,15 +55,24 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Issuer, audience, expiry, scope, proof of possession, and revocation state are validated at every enforcement point, on every request, not once at session start (§4.3)
 - [ ] Authorization is decided server-side from verified facts, never from client-supplied identity, roles, or scopes (§4.3)
 - [ ] Where OAuth is used, tokens are bound to their target with resource indicators, and client credentials are not shared between agents (§4.3)
+- [ ] Where an agent acts for a signed-in user, the OBO exchange runs in the credential-resolving middleware. The user's token is validated at ingress, referenced by handle thereafter, and never presented downstream by the agent (§4.3, §4.5)
+- [ ] The OBO exchange carries delegation semantics. The issued token names the user as subject and the agent as actor, and an exchange with a subject token and no actor credential is refused for agent clients (§4.3)
+- [ ] The authorization server honors an OBO exchange only for an agent pre-authorized to act for that user, through a may_act claim or an equivalent policy record (§4.3)
+- [ ] The issued scope is the intersection of what the user consented to, what the agent's registry entry declares, and what the declared task needs, never the user's full scope (§4.3)
+- [ ] The resource server checks both authorities on every request. The action must be permitted for the user and permitted for the agent, and either check failing denies (§4.3)
+- [ ] Consent for an agent to act for a user is a recorded, expiring, revocable grant with grantor, scope, and review date, and revoking the user's session, the consent, or the agent identity invalidates outstanding exchanged tokens within the revocation latency (§4.3)
+- [ ] Standing grants for user-absent operation, refresh tokens or provider equivalents, are vaulted, used by the middleware only, bound to one agent and one user, expiring, and audited on each use (§4.3)
+- [ ] Where the provider's OBO dialect cannot express the agent as a distinct claim in the issued token, the broker records the actor on its own decision record and the gap is declared in the AIBOM (§4.3, §10.2)
 - [ ] Development, staging, and production are separated logically and physically, with no credential reuse across them (§4.3)
 - [ ] Where the runtime exposes sub-agents, each carries a persistent registry identifier separate from the workload identity it runs under, resolving to its registry entry and approved AIBOM component version; where it cannot, the gap is recorded in the AIBOM with a named owner (§4.1, §10.3)
 - [ ] Where the runtime surfaces handoffs, the handoff payload is hashed at send and at receipt and a mismatch stops the run; where it cannot, the gap is recorded in the AIBOM with a named owner (§4.2)
+- [ ] The first hop from a human principal to an agent is an OBO delegation, never an impersonation, and the actor chain inside a token is treated as an audit record, with policy at each hop evaluated against the current actor only (§4.2)
 - [ ] Delegation narrows or preserves scope at every hop, records the human principal, enforces depth and fan-out limits, and terminates child sessions with the parent. No orphaned agents (§4.2)
 - [ ] Orchestrator and supervisor agent authority is scoped independently of the union of its downstream agents' permissions, and does not hold standing credentials to source data or destinations it merely reasons over the results of (§4.2)
 
 ### A2. Secrets
 
-- [ ] The model never receives a credential value. The agent references an opaque handle the broker resolves at execution time (§4.5)
+- [ ] The model never receives a credential value. The agent references an opaque handle the broker resolves at execution time, and a user's access token and any standing delegation grant are credentials under this rule (§4.5)
 - [ ] Secrets live in a vault, resolved at execution time. Not in environment variables, config files, images, source control, prompts, or logs (§4.5)
 - [ ] No secret enters prompts, context windows, memory, decision records, vector stores, or embeddings (§4.5)
 - [ ] Secret detection and redaction run over prompt logs, application logs, tool output, and error payloads before persistence or display (§4.5)
@@ -90,6 +100,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 ### A4. The enforcement broker
 
 - [ ] A deterministic broker runs outside the agent runtime, evaluates policy, and executes the action itself. Honoring a denial is not something the runtime can skip (§5.2)
+- [ ] The broker performs any OBO exchange itself when it issues task-scoped credentials, so the runtime holds neither the user's token nor a standing grant (§5.2)
 - [ ] Broker scope covers tool calls, memory writes, memory and knowledge retrieval, compaction, subagent start and stop, skill or tool registration, and any write to a location another run can read (§5.2)
 - [ ] A write is classified by its destination, not by the tool that made it. A file, row, or index entry a later session loads as context receives the memory-write decision even when it arrives through an ordinary file or shell tool (§5.2)
 - [ ] Where the runtime has a session-wide permission mode, a change to it is a consequential action. A change toward less approval requires an approver, an agent-triggered change is denied, and the mode in force is recorded on every action record (§5.2, §9.1)
@@ -130,6 +141,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] The transition from planning to consequence is gated by an intent-alignment check (§7.8)
 - [ ] Model identifier, region, sampling parameters, output ceiling, and per-task and per-tenant cost budgets are validated against allowlists and enforced (§7.7)
 - [ ] Orchestrator trifecta scoring reflects standing credential access, not the fact that downstream result content passes through its context for reasoning (§7.8)
+- [ ] Delegated reach is scored as the agent's own. OBO access to users' mailboxes, files, or records counts as the private-data leg for every consenting user, and a delegated send or post permission counts as the external-communication leg under that user's name (§7.8)
 
 ### A6. Error design and service surface
 
@@ -156,7 +168,7 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] The approved tool definition hash is recorded in the AIBOM, and a definition change triggers AIBOM regeneration as well as fresh consent (§6.4, §10.5)
 - [ ] Local servers bind to localhost, require authentication and origin validation, and are inventoried on developer workstations (§6.2)
 - [ ] Remote servers use TLS with server authentication, and the OAuth client and authorization-server roles are held by separate components (§6.3)
-- [ ] Token passthrough is prohibited. Downstream calls use a distinct audience-scoped token obtained through delegation or token exchange (§6.3)
+- [ ] Token passthrough is prohibited. Downstream calls use a distinct audience-scoped token from the OBO exchange, with the user as subject and the server added to the actor chain rather than replacing the agent in it (§6.3)
 - [ ] Server registration is a deployment gate. An unregistered server fails to deploy, fails to obtain credentials, or fails to be reachable (§4.6)
 
 ### A8. Human oversight
@@ -173,8 +185,8 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] The approval path verifies the approver's current role against the action class and data classification at decision time, rejects an approval from outside that scope, and records the role checked (§8)
 - [ ] The request as displayed, including the triggering rule and the agent's recommendation with its cited evidence, is retained with the decision (§8, §9.1)
 - [ ] Known errors are seeded into the output each validator reviews, generated outside the agent runtime and never disclosed to it, and catch rate is reported per validator and per action class. A falling rate triggers review, and the rate must hold or improve as classes move to GITL (§8, §9.3)
-- [ ] Approval requests show the exact action, target, parameters, data touched, expected impact, reversibility, agent and principal, policy decision, expiration, and rollback mechanism (§8)
-- [ ] Approval is cryptographically bound to a canonical representation of the action, and reauthorized immediately before execution (§8)
+- [ ] Approval requests show the exact action, target, parameters, data touched, expected impact, reversibility, agent and principal, the user acted for and the actor chain where authority is delegated, policy decision, expiration, and rollback mechanism (§8)
+- [ ] Approval is cryptographically bound to a canonical representation of the action, including the subject and actor chain where the agent acts on behalf of a user, and reauthorized immediately before execution (§8)
 - [ ] Approval timeouts and system failures default to denial (§8)
 - [ ] Freezes and approval requirements are authorization boundaries, not prompt instructions (§8)
 
@@ -183,6 +195,8 @@ Three yes answers require removing or constraining at least one leg, or a docume
 - [ ] Records capture the authenticated agent and principal, tenant, session, task and trace identifiers, action and target, policy decision and version, approval evidence, tool identity and version, classifications, outcome, timing, error category, and sequence metadata (§9.1)
 - [ ] Records carry the signing key identifier, correlation identifier, resolved model identifier and version, and mock-mode state (§9.1)
 - [ ] Records carry the agent's registry identifier where supplied, the permission mode in force, the decision-rights register entry and version the action ran under, full approval evidence (approver, role checked, mandated or discretionary, triggering rule, request as displayed, display and decision times), permission-mode changes with trigger, and handoff hashes where surfaced (§9.1)
+- [ ] Where an action ran under OBO authority, the record carries the subject user, the full actor chain, the consent or policy grant honored, and whether the user was present or the action ran on a standing grant, so a reviewer can separate what the user did from what an agent did in the user's name (§9.1)
+- [ ] Consent grants that let an agent act for a user are recorded as security-relevant events with grantor, scope, and expiry (§9.1)
 - [ ] Payload detail and retention are tiered by action class, and broker decision records, approval records, and identity fields are never sampled or shortened (§9.1)
 - [ ] The initiating principal is an authenticated claim, not a self-asserted string. Sessions without one are labeled self-asserted (§9.1)
 - [ ] Credentials and personal data are masked at write time. The log store has not become a new sensitive-data store (§9.1)
@@ -236,6 +250,7 @@ Apply where Step 0 flagged the condition.
 - [ ] Full-schema metadata scanning and tool-definition change alerting (§6.4)
 - [ ] Adversarial pre-validation. The model under test is tasked with escaping its own sandbox and defeating its own guardrails, supervised, offline, before any tool-granting run (§11)
 - [ ] Cross-step behavioral monitoring with baselines established before anomaly alerting is relied on (§9.3)
+- [ ] OBO signals alert. The same user token exchanged by two agents, an exchange by an agent not pre-authorized for the subject, an exchanged token used after consent or session revocation, an issued scope wider than the intersection, a first consent pairing a user with an agent, and a standing-grant use outside the declared schedule (§9.3)
 - [ ] Agent, tool, platform, and host telemetry reaches the SIEM or XDR the security team actually monitors (§9.3)
 - [ ] Platform monitoring baseline covering IAM events, network-path changes, and control-plane activity, separate from agent action records (§9.3)
 - [ ] Auxiliary-model anomalies (summariser refusals, classifier errors, unexpected secondary-model output) are routed to security rather than discarded as pipeline faults (§9.3)
@@ -248,6 +263,7 @@ Apply where Step 0 flagged the condition.
 - [ ] Cross-stream corroboration in place for compromise-window reconstruction, using broker decisions, cloud provider logs, tool-side logs, and network telemetry (§9.5)
 - [ ] Memory provenance and lifecycle controls, including quarantine, versioning, correction, rollback, and deletion (§7.4)
 - [ ] Multi-agent delegation governance and cumulative permission recertification (§4.2)
+- [ ] Cross-domain OBO delegation through the IETF identity chaining draft or the Identity Assertion JWT Authorization Grant where agents reach resources outside the home trust domain, with delegations enumerable per agent from records (§4.3, §9.1)
 - [ ] Approver-only intent extension path with recorded scope (§7.8)
 - [ ] Independent alignment gate ahead of consequential actions, running outside the agent's context (§7.8)
 - [ ] Eradication runbook covering accessed and discovered credentials, caches, model weights, and external channels (§9.4)
@@ -304,6 +320,11 @@ Run against every network-reachable component, including fallback and debug serv
 - [ ] Mutable artifact reference, unsigned artifact, and mismatched cache digest each rejected at bind time
 - [ ] Runtime declaring no provenance capability refused at session start
 - [ ] Replayed request and out-of-skew timestamp each rejected
+- [ ] OBO exchange with a subject token and no actor credential refused, and an exchange by an agent not pre-authorized for the subject refused
+- [ ] Exchanged token names the user as subject and the agent as actor, is audienced to the target, and carries a scope inside the intersection; a token naming the agent as subject for a user-delegated action rejected at the resource
+- [ ] Action under delegated authority denied when permitted for the user but not the agent, and when permitted for the agent but not the user
+- [ ] Revoking the user's consent, the user's session, or the agent identity invalidates outstanding exchanged tokens within the revocation latency
+- [ ] Standing delegation grant resolves only from the vault, is absent from the agent runtime and its environment, and each use produces its own audit event
 - [ ] Memory write, subagent start, and compaction each produce a broker decision record
 - [ ] A file write through an ordinary file or shell tool to a location a later session loads as context produces a memory-write decision and a memory record
 - [ ] A memory entry written from a single-case instruction carries case scope and is not retrieved for a different case
@@ -350,6 +371,7 @@ One-off exercises that produce evidence. Informative either way.
 - [ ] Search the codebase for shell-invoking calls. Every occurrence is a finding until traced and replaced with an argument-array call
 - [ ] Enumerate each agent's effective production permissions and compare against its documented permissions
 - [ ] Trace every downstream call and flag any that forwards the caller's token unchanged
+- [ ] For each production agent that acts for users, answer from records alone which users have delegated to it, under what scope, who granted each consent and when, when it expires, and which actions ran while the user was absent. Every unanswerable field is a finding, and an agent whose delegations cannot be enumerated is a critical finding
 - [ ] Determine for each production agent whether its tool servers are vendor-built or drawn from an unreviewed repository
 - [ ] Enumerate every outbound path from agent workloads, including shared services with their own egress, and compare against the allowlist. Any path a workload identity could have created is a critical finding
 - [ ] Search public code hosts, model hubs, package registries, and paste services for tokens attributable to the organization. Revoke every match
