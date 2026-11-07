@@ -1,11 +1,11 @@
 # MCP Security Best Practices
 
-This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements. Items marked **(MCP Spec)** are additions on tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) drawn from the MCP specification, revision 2025-11-25, and the MCP maintainers' post *Tool Annotations as Risk Vocabulary*, 16 March 2026.
+This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements. Items marked **(MCP Spec)** are additions on tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) drawn from the MCP specification, revision 2025-11-25, and the MCP maintainers' post *Tool Annotations as Risk Vocabulary*, 16 March 2026. Items marked **(OBO)** are additions on on-behalf-of delegation drawn from RFC 8693, *OAuth 2.0 Token Exchange*, the Microsoft Entra Agent ID and Amazon Bedrock AgentCore Identity OBO documentation, the IETF identity chaining and Identity Assertion JWT Authorization Grant drafts, and the MCP Enterprise-Managed Authorization extension.
 
 ## Core Principles
 
 1. **Keep credentials out of the model context.** The model does not need to see a credential to use a tool. Put credential-handling middleware between the model and the protected service.
-2. **Grant only temporary, task-specific authority.** Use least privilege and just-in-time, short-lived, revocable tokens instead of standing permissions.
+2. **Grant only temporary, task-specific authority.** Use least privilege and just-in-time, short-lived, revocable tokens instead of standing permissions. When the authority comes from a signed-in person, carry it as a delegation that names the person as subject and the agent as actor, never as an impersonation of the person. **(OBO)**
 3. **Treat tool metadata and configuration as executable-risk input.** Names, descriptions, parameters, defaults, annotations, schemas, manifests, and project settings can influence agent behavior and must be verified before use.
 4. **Verify every component in the trusted path.** Sign, pin, inventory, scan, and sandbox schemas, plugins, servers, SDKs, connectors, and dependencies.
 5. **Never turn untrusted text into executable strings.** Use structured process APIs, parameterized queries, validated paths, and allowlisted operations.
@@ -27,6 +27,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Use short-lived tokens scoped to a single session or task; credentials should not outlive the work for which they were issued.
 - Keep credentials out of prompts, context windows, model memory, vector stores, and other model-readable state.
 - Place middleware between the LLM and credentials so the LLM never sees secret values.
+- Treat a person's access token, and any refresh token held so an agent can act for that person later, as secrets under the same rule. The host validates the inbound user token at ingress and references it by handle afterward, and the on-behalf-of (OBO) exchange runs in the middleware rather than in the agent runtime. **(OBO)**
 - Redact token strings and other secret material from prompt, application, and observability logs.
 - Avoid shared or static service accounts. Prefer narrowly scoped credentials that support attribution and independent revocation.
 - Restrict unauthorized external communication so credentials and sensitive data do not have an exfiltration path.
@@ -39,6 +40,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Inspect prompts and model context for live credentials or retained secrets.
 - Check logs for unredacted prompts and secret material.
 - Identify tokens whose lifetime exceeds the session or task.
+- Find user tokens or refresh tokens held in agent runtime memory, environment variables, or configuration rather than in the vault. **(OBO)**
 - Inventory shared and static service accounts.
 - Review whether project configuration can redirect authenticated traffic or auto-approve MCP servers before a trust decision.
 
@@ -58,6 +60,7 @@ This guide consolidates the actionable security practices in the supplied text. 
   - valid for only minutes; and
   - revocable on demand.
 - Eliminate standing credentials wherever possible.
+- Scope an OBO token to the intersection of what the person consented to, what the agent's registry entry declares, and what the task needs. A may_act pre-authorization names who may act for the person and says nothing about what they may do, so scope narrowing is a separate control applied at exchange time. **(OBO)**
 - Manage permissions as policy-as-code in CI/CD so scope changes are reviewed and logged.
 - Physically and logically separate development, staging, and production.
 - Ensure development credentials cannot reach production systems or data.
@@ -75,6 +78,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Flag permission or scope changes that lack an audit record identifying who changed them and why.
 - Identify shared agent and service accounts.
 - Find scopes and tokens with no expiry.
+- Find OBO tokens issued at the person's full scope rather than the intersection of consent, registry entry, and task. **(OBO)**
 - Verify that testing or development changes cannot be pushed directly to production.
 - Verify that every agent action can be attributed to a distinct identity.
 - Review cumulative permissions, not only individual grants, to detect quiet scope growth.
@@ -252,7 +256,14 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Enforce scope checks for every tool and resource request.
 - Use OAuth resource indicators to bind a token to its intended target server and prevent cross-resource replay.
 - Never pass a client token through to a downstream service.
-- Use token exchange or an on-behalf-of flow so an agent receives its own narrowly scoped downstream token.
+- Use token exchange or an OBO flow so an agent receives its own narrowly scoped downstream token that names the person as subject and the agent as actor. Send the agent's own actor credential with the exchange. RFC 8693 states that delegation is impossible with only a subject token, so an exchange that omits the actor token produces impersonation, and agent clients should be refused it. **(OBO)**
+- Pre-authorize which agents may act for a person through the may_act claim in the person's token or an equivalent authorization-server policy, and have the authorization server refuse every other requester. **(OBO)**
+- Check both authorities at the resource on every request. The action must be permitted for the person and permitted for the acting agent, and either check failing denies. Decide on the current actor's own identity and scope, since RFC 8693 treats prior actors in a nested act claim as informational, which makes the chain an audit record and not a permission. **(OBO)**
+- When an MCP server or gateway exchanges a token it received from an upstream agent, it adds itself to the actor chain rather than replacing the agent, so the downstream API sees the person, the agent, and the server. **(OBO)**
+- Record consent for an agent to act for a person as an expiring, revocable grant with grantor, scope, and review date, and revoke outstanding exchanged tokens within the published latency when the person's session ends, consent is withdrawn, or the agent identity is disabled. **(OBO)**
+- Hold a refresh token or other standing grant for acting while the person is absent in the vault, used by the middleware only, bound to one agent and one person, with its own expiry and a distinct audit event on each use. Microsoft Entra issues the agent identity a refresh token for asynchronous scenarios, and it carries password-grade sensitivity. **(OBO)**
+- Apply the same requirements across dialects. RFC 8693 carries the agent in actor_token and records it in the act claim. Microsoft Entra's agent OBO flow uses the RFC 7523 jwt-bearer grant with requested_token_use set to on_behalf_of, identifies the agent by its client assertion and fmi_path, and has no actor_token parameter. Amazon Bedrock AgentCore Identity drives either dialect from the credential provider configuration rather than from agent code. Where a dialect cannot place the agent in the token as a distinct claim, record the actor at the gateway and declare the gap in the inventory. **(OBO)**
+- For an MCP server in another trust domain, use the MCP Enterprise-Managed Authorization extension, which has the client exchange its SSO identity assertion at the enterprise IdP for an Identity Assertion JWT Authorization Grant and present that grant to the server's authorization server under RFC 7523, so consent moves to IdP administrator policy and the client holds no per-server refresh token. Servers declare the extension in their authorization metadata and clients declare it in their capabilities. **(OBO)**
 - Separate the OAuth client and authorization-server roles and preserve independent trust boundaries.
 - Avoid shared client IDs, shared credentials, and token reuse across agents.
 - Rotate credentials and eliminate static or long-lived tokens.
@@ -267,12 +278,15 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Find authorization decisions derived from client-controlled input.
 - Identify logs that lack verified identity correlation.
 - Alert when the same token appears across different agents or IP addresses.
+- Find OBO exchanges that send a subject token with no actor credential, and downstream tokens that name the agent as subject for an action taken for a person. **(OBO)**
+- Find resources that check only the person's authority or only the agent's before acting on a delegated token. **(OBO)**
+- Alert when one person's token is exchanged by two agents, when an exchange comes from an agent not pre-authorized for that person, when an exchanged token is used after consent or session revocation, and on the first consent pairing a person with an agent. **(OBO)**
 - Review OAuth implementations for combined client/authorization-server roles, shared client IDs, redirect weaknesses, token passthrough, and missing resource binding.
 - Test message handling for replay acceptance and duplicate re-execution of consequential operations. **(NSA CSI)**
 
 ### Immediate action
 
-- Audit every downstream call made by agents and flag any flow that forwards the client’s token unchanged.
+- Audit every downstream call made by agents and flag any flow that forwards the client’s token unchanged or exchanges it without the agent's actor token.
 
 ## MCP08 — Lack of Audit and Telemetry
 
@@ -285,6 +299,8 @@ This guide consolidates the actionable security practices in the supplied text. 
   - parameters or safe parameter metadata; and
   - timestamp.
 - Where feasible, record cryptographic hashes of tool results and outputs to support forensic reconstruction. **(NSA CSI)**
+- Record the person on whose behalf a call ran and the actor chain, and whether the person was present or the call ran on a standing grant, so a reviewer can separate what the person did from what an agent did in the person's name. Red Canary's 2026 Entra Agent ID detection walkthrough traced an agent identity sending mail to an external recipient on behalf of a user through delegated Mail.Send, and the activity was attributable only from the agent identity and the consent grant, not from the user's own activity log. **(OBO)**
+- Log the consent grant that lets an agent act for a person as a security event with grantor, scope, and expiry. **(OBO)**
 - Capture the prompt/context and network events needed to reconstruct intent changes and external communication, while applying data minimization and masking.
 - Capture source information from HTTP headers where available, and alert natively on protocol anomalies: repeated or malformed requests, authorization failures, and RBAC violations. **(NSA CSI)**
 - Centralize MCP telemetry and send it to the organization’s SIEM or XDR.
@@ -300,6 +316,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Find agent activity that is unlogged or exists only as free-text console output.
 - Identify logs that are local, deletable, editable, or otherwise not tamper-evident.
 - Verify that tool calls, relevant prompts/context changes, and network calls are captured.
+- Find records where an agent's OBO action appears only under the person's identity with no actor recorded. **(OBO)**
 - Check whether MCP telemetry reaches the SIEM or XDR used by the security team.
 - Verify that anomaly detection and a normal-behavior baseline exist.
 - Test whether telemetry can be disabled without an alert or independent approval.
@@ -406,6 +423,7 @@ The controls above apply to every deployment. Several of them are conditional on
 
 - Authentication between client and server is mandatory, not optional, and all traffic is encrypted (MCP07).
 - Store client credentials in secure storage such as the OS keychain or a secrets manager, never in configuration files (MCP01).
+- A remote server that calls further services for the person performs its own OBO exchange with its own actor credential and never forwards the token it received (MCP07). **(OBO)**
 - Enterprise clients enforce authenticated server discovery against an explicit allowlist. A server absent from the allowlist is unreachable, not merely unapproved (MCP09).
 - HTTP streaming transport carries the full remote control set. Payload size limits and recursive-payload rejection, rate limiting on tool calls and transport requests, client and server authentication, mutual TLS, CORS protection, CSRF protection, and integrity checks against replay, spoofing, and poisoned responses (MCP07, MCP11).
 
@@ -423,6 +441,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] No secret enters model context, prompts, configuration, environment variables, or logs.
 - [ ] Logs redact token-like values.
 - [ ] Tokens are short-lived, task-scoped, and revocable.
+- [ ] Person tokens and refresh tokens are handled by middleware and never held by the agent runtime. **(OBO)**
 - [ ] Agents have distinct identities; no shared static service accounts are used.
 
 ### Authorization and environments
@@ -495,7 +514,9 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Tool destructiveness is classified in the gateway or registry, not taken from the server's declared hint. **(MCP Spec)**
 - [ ] Tokens are bound to their intended resource.
 - [ ] Client tokens are never passed through downstream.
-- [ ] Downstream access uses token exchange or on-behalf-of delegation.
+- [ ] Downstream access uses token exchange or OBO delegation that names the person as subject and the agent as actor, never impersonation. **(OBO)**
+- [ ] OBO exchanges are pre-authorized per agent and person, scoped to the intersection of consent, registry entry, and task, and checked for both authorities at the resource. **(OBO)**
+- [ ] Consent for an agent to act for a person is recorded, expiring, and revocable, and standing grants for acting while the person is absent are vaulted, bound to one agent and one person, and audited per use. **(OBO)**
 - [ ] Sensitive messages carry payload signatures, expiry, and replay protection; consequential operations are idempotent. **(NSA CSI)**
 - [ ] Logs correlate actions to verified user and agent identities.
 
@@ -503,6 +524,7 @@ The controls above apply to every deployment. Several of them are conditional on
 
 - [ ] Tool-call logs are structured, queryable, centralized, and tamper-evident.
 - [ ] Every tool call records identity, tool, safe parameter metadata, and time.
+- [ ] Records carry the person acted for and the actor chain, so an agent's OBO action is never shown as the person's own. **(OBO)**
 - [ ] Relevant prompt/context changes and outbound events are observable.
 - [ ] Sensitive log content is masked.
 - [ ] MCP telemetry is integrated with the SIEM or XDR.
@@ -548,7 +570,7 @@ Every MCP deployment should meet these six pillars:
    - OAuth 2.1.
    - Short-lived, scoped tokens.
    - No token passthrough.
-   - Per-user delegation.
+   - Per-user delegation as OBO, with the person as subject and the agent as actor. **(OBO)**
    - Every request tied to a verified identity with minimum privilege for minimum time.
 2. **Isolation and lifecycle**
    - Tenant boundaries are tested, not assumed.
@@ -587,7 +609,7 @@ A mature MCP security program continuously performs five functions:
    - Assign a named owner to every server.
    - Maintain a kill switch that can disable a compromised server within minutes.
 3. **Identity and access**
-   - Use OAuth 2.1, just-in-time tokens, and on-behalf-of delegation.
+   - Use OAuth 2.1, just-in-time tokens, and OBO delegation that names the person as subject and the agent as actor.
    - Tie every action to a real identity with minimum privilege for minimum time.
 4. **Defense in depth**
    - Combine gateways, runtime policies, tool guardrails, network controls, and container isolation.
@@ -605,7 +627,7 @@ A mature MCP security program continuously performs five functions:
 4. Validate inputs at the MCP boundary and ensure retrieved text is never treated as a command.
 5. Search for string-interpolated shell calls and replace them with structured process APIs.
 6. Audit each agent’s effective production permissions—not only its documented permissions.
-7. Confirm that client tokens are never passed through to downstream services.
+7. Confirm that client tokens are never passed through to downstream services and that every OBO exchange carries the agent's actor token. **(OBO)**
 8. Enable structured tool-call logging with identity, tool, safe parameter metadata, and time.
 9. Run the tenant-isolation test and add it to CI.
 10. Build a trifecta scorecard for every production agent and workflow.
@@ -620,3 +642,10 @@ A mature MCP security program continuously performs five functions:
 3. Coalition for Secure AI. *Model Context Protocol (MCP) Security*. OASIS Open Project, Workstream 4 (Secure Design Patterns for Agentic Systems), approved 8 January 2026. https://www.coalitionforsecureai.org/wp-content/uploads/2026/03/model-context-protocol-security-1.pdf
 4. Model Context Protocol. *Specification, revision 2025-11-25, Server Features, Tools* and `ToolAnnotations` schema. https://modelcontextprotocol.io/specification/2025-11-25/server/tools
 5. Hungerford, Morrow, Chang. *Tool Annotations as Risk Vocabulary: What Hints Can and Can't Do*. Model Context Protocol Blog, 16 March 2026. https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/
+6. Jones, Nadalin, Campbell, Bradley, Mortimore. *OAuth 2.0 Token Exchange*. RFC 8693, January 2020. https://datatracker.ietf.org/doc/rfc8693/
+7. Microsoft. *Agent OAuth flows: On behalf of flow*. Microsoft Entra Agent ID documentation. https://learn.microsoft.com/en-us/entra/agent-id/agent-on-behalf-of-oauth-flow
+8. Amazon Web Services. *On-behalf-of token exchange with AgentCore Identity*. Amazon Bedrock AgentCore developer guide. https://docs.amazonaws.cn/bedrock-agentcore/latest/devguide/on-behalf-of-token-exchange.html
+9. Schwenkschuster, Kasselmann, Burgin, Jenkins, Campbell, Parecki. *OAuth Identity and Authorization Chaining Across Domains*. draft-ietf-oauth-identity-chaining-16, June 2026, work in progress. https://datatracker.ietf.org/doc/html/draft-ietf-oauth-identity-chaining-16
+10. Parecki, McGuinness, Campbell. *Identity Assertion JWT Authorization Grant*. draft-ietf-oauth-identity-assertion-authz-grant, revision 04, May 2026, work in progress. https://www.ietf.org/archive/id/draft-ietf-oauth-identity-assertion-authz-grant-02.html
+11. Model Context Protocol. *Enterprise-Managed Authorization* extension, io.modelcontextprotocol/enterprise-managed-authorization, stable. https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization
+12. Red Canary (now Zscaler). *Investigating suspicious AI workflows in Microsoft Entra Agent ID: Assistive agents*. 2026, lab-scenario detection walkthrough. https://redcanary.com/blog/threat-detection/entra-id-ai-workflows-assistive-agents/
