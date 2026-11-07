@@ -62,6 +62,7 @@ Before development and again before deployment, classify the system using:
 - Financial, legal, safety, privacy, and operational impact
 - Degree of autonomy and reversibility
 - External connectivity and tool privileges
+- Whether the system acts under its own service authority, under authority delegated by human users, or both, and whether it acts for users while they are absent (§4.3)
 - Multi-agent and third-party dependencies
 - Whether the system simultaneously holds all three legs of the capability trifecta in §7.8 — private-data access, untrusted-content ingestion, and external communication
 - Whether the system executes model-generated code, runs training or evaluation workloads, or hosts research models. These workloads are high-risk by default regardless of data sensitivity, because the model under test is itself an untrusted party with execution access. Systems classified as research or evaluation workloads are governed by §5.1, §5.3, and §3.3 in place of the per-action controls in §5.2, §7.6, and §8. See §7.6 for the conditions.
@@ -242,9 +243,11 @@ Each agent receives only the tools, resources, data, destinations, and action ty
 
 Delegation must satisfy all of the following:
 
+- The first hop from a human principal to an agent is a delegation, never an impersonation. The token the agent carries downstream names the user as subject and the agent as a distinct actor, so the resource can tell the two apart and the record can attribute the action to both (§4.3).
 - A child cannot receive authority exceeding its parent's delegable authority.
 - Each hop narrows or preserves scope; it never silently expands it.
 - Delegation records identify the human principal, parent, child, purpose, scope, and expiration (provenance tracking back to the accountable owner).
+- The actor chain inside a token is an audit record, not an authorization input. RFC 8693 treats prior actors in a nested act claim as informational, so policy at each hop is evaluated against the current actor's own identity and scope, and a chain is never enforced by reading it.
 - Maximum delegation depth and fan-out are enforced.
 - Child credentials and sessions terminate with the task or parent unless explicitly and safely re-parented. Orphaned agents are prohibited.
 - Policy is re-evaluated at every delegation and tool boundary.
@@ -265,7 +268,13 @@ Credentials must be short-lived, audience-restricted, task-scoped, and resistant
 
 > **Correction of a common myth:** Including an agent fingerprint in the `jti` claim does **not** make a token non-transferable. The `jti` supports uniqueness and replay detection only. Non-transferability requires proof-of-possession binding (mTLS `cnf` or DPoP).
 
-Implementation options: OAuth 2.0 client credentials + mTLS for agent-to-service; SPIFFE/SPIRE for Kubernetes-native workload identity; cloud STS role assumption for cloud deployments. Maintain a revocation mechanism (CRL/OCSP or short TTLs) with a defined maximum revocation latency.
+**On-behalf-of exchange.** Where an agent acts for a signed-in user, the user's token is a credential under §4.5. It is validated at ingress, referenced by handle thereafter, and handled by the credential-resolving middleware, not by the agent runtime. The middleware exchanges the user's token together with the agent's own actor credential for a new token audienced to the downstream resource, and the agent never presents the user's token downstream (§6.3). The exchange carries delegation semantics. The issued token names the user as subject and the agent as actor, and RFC 8693 states that delegation is impossible with only a subject token and no actor token, so an exchange that omits the agent's actor credential produces impersonation and is refused for agent clients. The authorization server honors an exchange only for an agent pre-authorized to act for that user, through the may_act claim in the subject token or an equivalent policy record, and refuses every other requester. Pre-authorization names who may act and not what they may do, so the issued scope is narrowed separately at exchange time to the intersection of what the user consented to, what the agent's registry entry declares, and what the declared task needs, and never defaults to the user's full scope. The resource server evaluates both authorities on every request. The action must be permitted for the user and permitted for this agent, and either check failing denies. The consent or policy grant that lets an agent act for a user is itself a recorded, expiring, revocable authorization event with a grantor, a scope, and a review date (§9.1). Revoking the user's session, the user's consent, or the agent's identity invalidates outstanding exchanged tokens within the defined revocation latency.
+
+Where an agent must act for a user who is not present, in scheduled, asynchronous, or long-running work, the standing grant that permits it, a refresh token or provider equivalent, is a long-lived credential of password-grade sensitivity. It is held in the vault and used by the middleware, never by the agent runtime. It is bound to one agent identity and one user, carries its own expiry and a revocation path, and each use produces an audit event distinct from the interactive path (§9.1). A user-absent delegation is a classification input under §2.1 and a yes on the private-data leg of §7.8 for every user who has granted it.
+
+Provider dialects differ and the requirements above do not. RFC 8693 token exchange carries the agent in an actor_token parameter and records it in the act claim of the issued token. Microsoft Entra's on-behalf-of flow for agent identities uses the RFC 7523 jwt-bearer grant with requested_token_use set to on_behalf_of, identifies the agent through its client assertion and the fmi_path of the agent identity, has no actor_token parameter, and supports a refresh token for the user-absent case. Amazon Bedrock AgentCore Identity drives either dialect from the agent platform side, with the exchange configured on the credential provider rather than coded in the agent. Cross-domain delegation uses the IETF identity and authorization chaining draft, which combines RFC 8693 with an RFC 7523 authorization grant, and the Identity Assertion JWT Authorization Grant profile of it, which moves the consent decision from the end user to the identity provider's administrator policy. Where a dialect cannot express the agent as a distinct claim in the issued token, the broker records the actor on its own decision record and the gap is declared in the AIBOM (§10.2).
+
+Implementation options: OAuth 2.0 client credentials + mTLS for agent-to-service; SPIFFE/SPIRE for Kubernetes-native workload identity; cloud STS role assumption for cloud deployments; RFC 8693 token exchange, the Entra on-behalf-of flow, or an agent platform's exchange service for user-delegated access under the on-behalf-of requirements above. Maintain a revocation mechanism (CRL/OCSP or short TTLs) with a defined maximum revocation latency.
 
 Permissions and scopes must themselves carry expiry so that access is re-evaluated rather than inherited indefinitely. Manage permission definitions as policy-as-code in the change pipeline so every scope change has a reviewer, a reason, and an audit record; a scope change with no attributable author is a finding.
 
@@ -281,7 +290,7 @@ Discovery metadata must come from an authenticated registry and include service 
 
 ### 4.5 Secret Custody and Model-Context Exclusion
 
-**Requirement:** The model never receives a credential value. A tool does not need the model to see a secret in order to use it — credential-resolving middleware sits between the model runtime and the protected service, and the agent references an opaque handle that the broker (§5.2) resolves at execution time.
+**Requirement:** The model never receives a credential value. A tool does not need the model to see a secret in order to use it — credential-resolving middleware sits between the model runtime and the protected service, and the agent references an opaque handle that the broker (§5.2) resolves at execution time. A user's access token and any standing delegation grant are credentials under this requirement, so the on-behalf-of exchange in §4.3 runs in the middleware and the agent runtime holds neither.
 
 - Store secrets in a managed vault or secrets manager. Not in `.env` files, configuration files, container images, source control, prompts, or logs.
 - Fetch credentials at execution time. Long-lived secrets injected as environment variables are prohibited for production agents; where a bootstrap secret is unavoidable, scope it to vault authentication only and nothing else.
@@ -366,7 +375,7 @@ The broker:
 - Bounds task shape as well as task volume. Cap recursion depth, chain length, delegation fan-out, and per-task compute and wall-clock budget, with timeouts on long-running operations. Apply backpressure and queue limits at the boundary so a burst degrades service rather than stalling the workflow, and reject malformed, oversized, and missing-field requests before they reach model or tool execution. A broker that gates every action but bounds none of them is exhaustible by legitimate-looking work
 - Requires an idempotency key on every consequential operation and rejects or safely replays a duplicate rather than re-executing it. Neither the underlying transport nor most tool implementations supply this, so a retried, replayed, or duplicated request will otherwise take effect twice
 - Obtains bound human approval where the action class is HITL in the decision-rights register (§8), and runs GITL classes without per-action approval under monitoring, audit, and the class-scoped kill switch, recording the register entry version on every such decision
-- Issues task-scoped credentials
+- Issues task-scoped credentials, performing any on-behalf-of exchange itself so the agent runtime holds neither the user's token nor a standing delegation grant (§4.3, §4.5)
 - Executes in the required isolation boundary
 - Validates and classifies results
 - Records the decision and outcome
@@ -402,7 +411,7 @@ Containment must also be **class-scoped**. An operator must be able to halt ever
 
 ### 6.1 Threat Model
 
-Treat MCP servers and other dynamic tool providers as untrusted supply-chain and execution dependencies. Relevant threats: malicious or changed tool descriptions; tool substitution or rug pulls; excessive or undisclosed permissions; token passthrough and confused-deputy behavior; cross-session or cross-tenant leakage; unsafe error disclosure; tool-output prompt injection; unauthorized network callbacks; dependency compromise; and sandbox escape.
+Treat MCP servers and other dynamic tool providers as untrusted supply-chain and execution dependencies. Relevant threats: malicious or changed tool descriptions; tool substitution or rug pulls; excessive or undisclosed permissions; token passthrough and confused-deputy behavior; impersonation where delegation was required, and user tokens or standing delegation grants held in the server process; cross-session or cross-tenant leakage; unsafe error disclosure; tool-output prompt injection; unauthorized network callbacks; dependency compromise; and sandbox escape.
 
 ### 6.2 Local Transports (STDIO / Unix Sockets)
 
@@ -420,16 +429,19 @@ Remote servers require TLS with server authentication, protocol validation, scop
 
 **Keep the OAuth client and authorization-server roles separate.** A component that both issues tokens and consumes them has no trust boundary between issuance and use — the §4.1 self-verifying anti-pattern reappearing at the protocol layer. Preserve independent trust domains, validate redirect URIs strictly, and bind tokens to their target with resource indicators (§4.3).
 
-**Prohibit token passthrough (confused deputy).** Do not forward a client's bearer token to downstream services. Obtain a **distinct downstream token** with the correct audience and minimum scope through an approved delegation or token-exchange flow (e.g., RFC 8693).
+**Prohibit token passthrough (confused deputy).** Do not forward a client's bearer token to downstream services. Obtain a **distinct downstream token** with the correct audience and minimum scope through the on-behalf-of exchange in §4.3, with the user as subject, the server's own identity as actor, and the scope narrowed to what this hop needs. A server that exchanges a token it received from an upstream agent adds itself to the actor chain rather than replacing the agent in it, so the resource sees the user, the agent, and the server.
 
 ```python
-# CORRECT: exchange for a new, audience-scoped downstream token
+# CORRECT: exchange for a new, audience-scoped downstream token with delegation semantics
 delegated = token_exchange(
-    subject_token=incoming_client_token,
+    subject_token=incoming_client_token,      # the user remains the subject
+    actor_token=this_server_workload_token,   # this hop, recorded in the act claim
     resource="https://database-api.example.com",
     scope="read:sales",              # minimum needed
 )
 # WRONG: requests.get(url, headers={"Authorization": f"Bearer {incoming_client_token}"})
+# ALSO WRONG: token_exchange(subject_token=incoming_client_token, ...) with no actor_token,
+#             which yields impersonation and is refused for agent clients
 ```
 
 ### 6.4 Tool Manifests and Change Control
@@ -696,6 +708,7 @@ Sections 3.2 and 7.1 stop untrusted content from becoming *policy*. This section
 - Run intent-drift detection in an **independent guardrail outside the primary agent's context**. A check that lives inside the context an attacker has already influenced is not a check. This is the §9.5 principle applied to reasoning rather than to records: the evaluator must be something the compromised party cannot author.
 - **A monitor inside a training or evaluation loop becomes an optimization target.** Where a guardrail's verdict feeds a reward signal, a score, or any selection pressure, the workload is being trained to evade it, and evasion becomes less detectable rather than less frequent. Announcing monitoring to the agent has the same effect, raising covert attempts even as overt ones fall. Keep the guardrail out of the reward surface, and treat any rise in the sophistication rather than the rate of violations as evidence this has happened.
 - Score an orchestrator's trifecta status on whether it holds a standing credential to private data, not on whether result content passes through its context for reasoning. Otherwise every orchestrator in a routed multiagent pattern scores a false positive on the data-access leg.
+- Score delegated reach as the agent's own. An agent that can obtain exchanged tokens for a user's mailbox, files, or records holds the private-data leg for every user who has consented, and a delegated send or post permission holds the external-communication leg under that user's name. Red Canary's 2026 detection walkthrough for Entra Agent ID assistive agents traced exactly this shape, an agent identity sending mail to an external recipient on behalf of a user through delegated Mail.Send, and the activity was attributable only by reading the agent identity and the consent grant rather than the user's own activity log.
 
 **The capability trifecta**
 
@@ -723,9 +736,9 @@ High-impact, irreversible, externally visible, or security-sensitive actions req
 
 **Which actions reach a human is set by policy, never by the agent.** The broker routes by action class, target, and data classification. Model-stated confidence is not a routing input, since an agent that chooses what a reviewer sees controls its own oversight. Each approval record states whether review was mandated by policy or raised at the agent's discretion, and approval rates are reported for the two separately.
 
-Approval requests must show: the exact action, target, and material parameters; data accessed or disclosed; expected impact and reversibility; agent and initiating principal; the policy decision and relevant warnings; an expiration time; and the recovery/rollback mechanism. The request as displayed, including the rule that triggered review and the agent's recommendation with the evidence it cited, is retained with the decision (§9.1), so a later reviewer sees what the approver saw.
+Approval requests must show: the exact action, target, and material parameters; data accessed or disclosed; expected impact and reversibility; agent and initiating principal, and where the action runs under delegated authority, the user on whose behalf it runs and the chain of actors; the policy decision and relevant warnings; an expiration time; and the recovery/rollback mechanism. The request as displayed, including the rule that triggered review and the agent's recommendation with the evidence it cited, is retained with the decision (§9.1), so a later reviewer sees what the approver saw.
 
-**Bind approval cryptographically to a canonical representation of the proposed action.** Any change to the action, target, parameters, data classification, agent identity, or policy version invalidates the approval. **Reauthorize immediately before execution** to prevent time-of-check/time-of-use (TOCTOU) failures.
+**Bind approval cryptographically to a canonical representation of the proposed action.** Any change to the action, target, parameters, data classification, agent identity, the subject and actor chain where the agent acts on behalf of a user, or policy version invalidates the approval. **Reauthorize immediately before execution** to prevent time-of-check/time-of-use (TOCTOU) failures.
 
 **Validator competence is measured, not assumed.** Plant known errors into the stream of agent output each human validator reviews (a wrong finding, a flawed patch, a fabricated citation, an out-of-scope action presented as routine) at a rate the validator cannot predict, and record whether each was caught. Report the catch rate per validator and per action class as a §9.3 signal; a falling rate triggers review and retraining, and the rate must hold or improve as the register moves classes from HITL to GITL, since each promotion raises what the remaining human reviews must catch. The seeded items are generated outside the agent runtime and never disclosed to it, and a seeded error that reaches production because a validator passed it is handled as an incident of the validation path, not of the agent.
 
@@ -741,7 +754,7 @@ Freezes, approval requirements, and other critical constraints are **authorizati
 
 Security-relevant events must record: authenticated agent and initiating principal; the agent's registry identifier where the runtime supplies one (§4.1); tenant, session, task, and trace identifiers; requested action and target; policy decision and policy version; the permission mode in force where the runtime has one (§5.2); human-approval evidence; tool identity, version, and execution boundary; input/output references, classifications, or approved hashes; outcome, timing, and error category; and sequence/integrity metadata. Include the signing key identifier (`key_id`) in every record so that records remain attributable across key rotations.
 
-Records must also carry the correlation identifier (§6.5.2), the resolved model identifier and version (§7.7), and the `mock_mode` state of any executed tool, so that an audit record establishes whether an action actually took effect. Intent extensions (§7.8) and session refusals at capability declaration (§5.2) are security-relevant events and are recorded on the same terms. Human-approval evidence comprises the approver's identity, the role checked and the result, whether review was mandated or discretionary, the rule that triggered it, the request as displayed, and the times of display and decision (§8). Every record carries the decision-rights register entry and its version under which the action ran, so a GITL action is attributable to the pre-approval that permitted it and a HITL action to its approver (§8). Permission-mode changes are recorded with previous mode, new mode, and trigger (§5.2), and handoff payload hashes at send and receipt are recorded where the runtime surfaces handoffs (§4.2).
+Records must also carry the correlation identifier (§6.5.2), the resolved model identifier and version (§7.7), and the `mock_mode` state of any executed tool, so that an audit record establishes whether an action actually took effect. Intent extensions (§7.8) and session refusals at capability declaration (§5.2) are security-relevant events and are recorded on the same terms. Human-approval evidence comprises the approver's identity, the role checked and the result, whether review was mandated or discretionary, the rule that triggered it, the request as displayed, and the times of display and decision (§8). Every record carries the decision-rights register entry and its version under which the action ran, so a GITL action is attributable to the pre-approval that permitted it and a HITL action to its approver (§8). Permission-mode changes are recorded with previous mode, new mode, and trigger (§5.2), and handoff payload hashes at send and receipt are recorded where the runtime surfaces handoffs (§4.2). Where the action ran under delegated authority, the record carries the subject user, the full actor chain from the issued token or from the broker's own record where the dialect carries none, the consent or policy grant under which the exchange was honored, and whether the user was present or the action ran on a standing grant (§4.3). A record must let a reviewer separate what a user did from what an agent did in the user's name, since the user's own activity log shows the two the same way. The grant of consent for an agent to act for a user is a security-relevant event recorded on the same terms, with grantor, scope, and expiry.
 
 Capture enough to reconstruct intent changes and external communication — prompt and context deltas, and network events, not only tool calls — while applying minimization and masking. **The log store must not become a new sensitive-data store.** Mask credentials and personal data in payloads at write time; an audit pipeline that faithfully records everything an agent saw has recreated the exposure it was built to detect, inside a system with broader read access. Set retention long enough to support forensic reconstruction and applicable compliance obligations, and record the retention decision and its owner. Tier payload detail and retention by action class. High-impact and irreversible actions keep full payload references for the longest period, and routine actions may keep sampled payloads or a shorter one. Broker decision records, approval records, and identity fields are never sampled, since §9.5 corroboration depends on a complete stream.
 
@@ -770,6 +783,7 @@ Error-shape and tool-definition signals:
 - Responses or log lines missing an expected correlation identifier, which indicates either a component outside the shared implementation or a path that bypasses the broker.
 - Outbound connections from tool or plugin workloads to unapproved domains (§3.3).
 - The same token presented under two agent identities, or from two network locations (§4.3).
+- The same user token exchanged by two agents, an exchange requested by an agent not pre-authorized for the subject, an exchanged token used after the subject's session or consent was revoked, or an issued scope wider than the intersection in §4.3. The first consent grant pairing a user with an agent is a signal on the same terms as a new tool or destination, and a standing-grant use outside the agent's declared schedule is a signal on the same terms as cadence divergence.
 - Agent connections to endpoints absent from the approved registry (§4.6).
 - Divergence between an agent's stated objective and its action sequence, evaluated outside the agent's own context (§7.8).
 - Memory growth and change per agent. Baseline entry count, write rate, share of entries scoped beyond one case, and share written from untrusted sources, and alert on departures (§7.4). Research cited by Partnership on AI (Al-Tawaha et al., 2026) found unsafe-action rates rise as memory accumulates, visible in memory state before output.
@@ -974,6 +988,11 @@ Validation must also include **control-environment attack**: the assumption that
 - A mutable artifact reference, an unsigned artifact, and a cache entry with a mismatched digest are each rejected at bind time.
 - A runtime that declares no provenance capability is refused at session start, not at its first consequential call.
 - A replayed runtime-to-broker request, and one with a timestamp outside the skew window, are each rejected.
+- A token exchange requested by an agent client with a subject token and no actor credential is refused, and an exchange requested by an agent not pre-authorized to act for the subject is refused.
+- An exchanged token names the user as subject and the agent as actor, is audienced to the target, and carries a scope no wider than the intersection of user consent, registry capability, and task declaration; a token naming the agent as subject for a user-delegated action is rejected at the resource.
+- An action under delegated authority is denied when permitted for the user but not for the agent, and denied when permitted for the agent but not for the user.
+- Revoking the user's consent, the user's session, or the agent identity invalidates outstanding exchanged tokens within the defined revocation latency.
+- A standing delegation grant for user-absent operation resolves only from the vault, is absent from the agent runtime and its environment, and each use produces its own audit event.
 - A memory write, a subagent start, and a compaction each produce a broker decision record; absence of any is a failure.
 - A file write through an ordinary file or shell tool to a location a later session loads as context produces a memory-write decision and a §7.4 record.
 - A memory entry written from a single-case instruction carries case scope and is not retrieved for a different case.
@@ -1017,6 +1036,7 @@ Validation must also include **control-environment attack**: the assumption that
 - Search the codebase for `child_process.exec`, `os.system`, `subprocess` with `shell=True`, and `shell: true`. Treat every occurrence as a finding, trace its data flow, and replace it with a structured argument-array call (§7.6).
 - Enumerate each agent's *effective* production permissions rather than its documented permissions, and compare the two (§4.2).
 - Trace every downstream call an agent makes and flag any that forwards the caller's token unchanged (§6.3).
+- For each production agent that acts for users, answer from records alone which users have delegated to it, under what scope, who granted each consent and when, when it expires, and which actions ran while the user was absent (§4.3, §9.1). Every unanswerable field is a finding, and an agent whose delegations cannot be enumerated is a critical finding.
 - Determine, for each production agent, whether its tool servers are vendor-built or drawn from an unreviewed repository (§10).
 - Enumerate every outbound path from agent workloads, including load balancers, private links, peering, VPN enrollments, and shared services with their own egress, and compare against the approved allowlist. Any path not on the list is a finding, and any path a workload identity could have created is a critical finding (§3.3).
 - Search public code hosts, model hubs, package registries, and paste services for tokens attributable to the organization (§4.5). Revoke every match.
@@ -1101,6 +1121,8 @@ Do **not** report unsupported percentage-complete claims (e.g., "100% coverage")
 | Consent lifecycle | Renewed approval on server capability change | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Vulnerability management | CVE tracking linked to the server inventory | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Delegation architecture | Orchestrator authority scoped independently of downstream union | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Delegated authority | On-behalf-of exchange with user as subject, agent as actor, pre-authorized actors, scope intersection, and dual authority checks | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
+| Standing delegation | User-absent grants vaulted, bound to one agent and one user, expiring, and separately audited | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Decommissioning | Retirement exit checks on processes, ports, connections, credentials, and third-party authorizations | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Agent attribution | Per-agent registry identifier on broker records, or a declared and owned gap | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
 | Autonomy posture | Permission-mode changes brokered, agent-triggered changes denied | Not assessed | Pending | Not tested | Unknown | TBD | TBD |
@@ -1151,7 +1173,8 @@ The following illustrates the intended mapping *shape* — each row supports, an
 
 - Workload identity and external (deterministic) policy enforcement
 - Least privilege and task-scoped, proof-of-possession-bound authorization
-- Secrets in a vault, resolved at execution time, and never present in model context (§4.5)
+- On-behalf-of exchange with delegation semantics, pre-authorized actors, scope intersection, and dual authority checks at the resource, with no user-token passthrough (§4.3, §6.3)
+- Secrets in a vault, resolved at execution time, and never present in model context, user tokens and standing delegation grants included (§4.5)
 - Execution sandboxing and network containment
 - Structured tool schemas, safe database access, and no untrusted values in command strings (§7.6)
 - Canonical, redacted, fail-closed error design across every component (§6.5)
@@ -1215,6 +1238,8 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - Memory provenance and lifecycle controls, including entry scope, causal link, and as-of reconstruction (§7.4)
 - Memory growth and change baselined per agent (§9.3)
 - Multi-agent delegation governance
+- Standing delegation grants for user-absent operation vaulted, bound, expiring, and separately audited, with delegations enumerable per agent from records (§4.3, §9.1, §11)
+- Cross-domain delegation through identity chaining or the Identity Assertion JWT Authorization Grant where agents reach resources outside the home trust domain (§4.3)
 - Per-agent registry identifiers on broker records where the runtime exposes sub-agents, or a declared and owned gap (§4.1)
 - Handoff payload integrity where the runtime surfaces handoffs, or a declared and owned gap (§4.2)
 - Intent anchoring and an independent alignment gate ahead of consequential actions (§7.8)
@@ -1247,6 +1272,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 
 ## 17. Glossary
 
+- **Actor claim (act):** The claim in an exchanged token that identifies the party acting on behalf of the subject; nested entries record prior actors and are informational, so only the current actor is enforced (§4.2, §4.3).
 - **Agent:** An AI-enabled system that can plan or select actions and invoke tools.
 - **Agent registry identifier:** A persistent identifier unique to one agent or sub-agent, separate from the workload identity it runs under, that resolves to its registry entry and approved AIBOM component version (§4.1).
 - **AIBOM:** A scoped, machine-readable record of an AI system comprising a header, components and services, directed data flows, and evidence references; a record of fact, not a score or a compliance assertion (§10).
@@ -1265,6 +1291,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Differential discovery:** Comparing successive infrastructure scans against each other rather than only against the registry, so services that relocate or change between scans are surfaced (§4.6).
 - **Decision-rights register:** The change-controlled record mapping every automated action class to HITL or GITL with a named owner, the four-test result, a reversal ceiling, an observation window, and promotion and demotion history; the source the broker routes from and the record skills reservations live in (§8).
 - **DEFER:** A broker disposition for a concern that cannot be resolved synchronously, with a bounded resolution window and a timeout that resolves to DENY; distinct from a human approval request (§5.2).
+- **Delegation vs. impersonation:** Under RFC 8693, a delegation token names the subject and a distinct actor, while an impersonation token is indistinguishable from the subject's own; agents use delegation, and an exchange without an actor credential is refused for them (§4.3).
 - **DID:** Decentralized Identifier (W3C); requires a method defining issuance, resolution, rotation, and revocation.
 - **DPoP:** Demonstrating Proof of Possession; binds token use to a key.
 - **Error envelope:** The single canonical error shape emitted by every component (§6.5.2), comprising a stable code, generic message, enumerated remediation hint, escalation flag, correlation identifier, and timestamp.
@@ -1274,16 +1301,19 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **GITL:** Governance-in-the-loop. An action class pre-approved to run without per-action human approval under monitoring, audit, and a tested kill switch, admitted only when reversible, non-disruptive, not externally visible, and not subject to regulatory attestation, and demoted on incident (§8).
 - **Fail closed:** The property that a timeout, exception, or missing configuration produces a denial or a refusal to start, never a permit or an unauthenticated service.
 - **HITL:** Human-in-the-loop. A named person approves each action in the class before it runs; the default mode for every register entry and the permanent mode for entries no evidence promotes (§8).
+- **ID-JAG:** Identity Assertion JWT Authorization Grant, an IETF draft profile of RFC 7523 that lets an agent obtain delegated access in another trust domain under identity-provider administrator policy without a per-resource user consent step (§4.3).
 - **Idempotency key:** A caller-supplied identifier that lets the broker recognize a duplicated or replayed consequential request and decline to execute it a second time (§5.2).
 - **Intent anchoring:** Holding the user's original objective in trusted, structurally separate system instructions and validating that proposed actions still serve it (§7.8).
 - **Internal mirror:** The organization-operated registry through which every dependency, image, and model artifact is resolved; the single validation and egress point for third-party artifacts (§10).
 - **JIT:** Just-in-time issuance of short-lived, scoped credentials.
 - **MAESTRO:** CSA's seven-layer agentic AI threat-modeling framework.
+- **may_act:** A claim in a subject token, or an equivalent authorization-server policy record, naming the parties permitted to act for that subject; checked before an exchange is honored and silent on what the actor may do, which scope narrowing governs separately (§4.3).
 - **Memory scope:** The breadth a memory entry applies to (one case, one task, or all future work), recorded at write time; widening it is a new write with its own decision (§7.4).
 - **Minimum usable AIBOM:** The fields and completeness expectation policy requires for a given classification tier before an AIBOM can satisfy a gate (§10.5).
 - **MCP:** Model Context Protocol; exposes context and tools to compatible clients.
 - **mTLS:** Mutual TLS; bidirectional certificate authentication.
 - **Model routing layer:** A gateway component that selects among providers or models, holds their credentials, and mediates every prompt and response; a trust zone and policy-enforcement point in its own right (§3.3).
+- **On-behalf-of (OBO):** The pattern in which an agent exchanges a user's token plus its own actor credential for a downstream token that names the user as subject and the agent as actor; RFC 8693 token exchange and the Entra jwt-bearer on-behalf-of flow are dialects of it (§4.3).
 - **Permission mode:** A session-wide runtime setting that determines how often an agent pauses for approval across all tools; a change to it is a consequential action, and a change triggered by the agent is denied (§5.2).
 - **Policy decision point (PDP):** Evaluates an action against authorization policy.
 - **Policy enforcement point (PEP):** Permits, denies, or constrains execution based on a policy decision.
@@ -1296,6 +1326,7 @@ The following illustrates the intended mapping *shape* — each row supports, an
 - **Shadow server:** A tool or MCP server running outside the registry — unregistered, unowned, unmonitored, and absent from the inventory consulted during an incident (§4.6).
 - **Skills reservation:** Work deliberately kept human-performed, recorded in the decision-rights register with task, role, cadence, and review date, so validator judgment is maintained while agents absorb adjacent work (§8).
 - **SPIFFE/SPIRE:** Standard and runtime for securely identifying software workloads.
+- **Standing delegation grant:** A refresh token or provider equivalent that lets an agent act for a user who is not present; vaulted, bound to one agent and one user, expiring, and separately audited (§4.3).
 - **TOCTOU:** Time-of-check/time-of-use; the gap between approval and execution that must be closed by re-authorization.
 - **TOFU:** Trust on first use; pinning an artifact or schema at first observation and alerting on later change. A fallback where signature verification is unavailable, not an equivalent to it.
 - **Transitive egress:** Internet reachability obtained through a shared service, cache, private link, or other intermediary rather than directly from the workload; closed by applying the workload's restrictions to every reachable intermediary (§3.3).
@@ -1316,6 +1347,9 @@ Maintain dated references to the authoritative versions the organization actuall
 - W3C DID specifications (when DIDs are used)
 - SPIFFE/SPIRE documentation (when workload identity is used)
 - OAuth 2.0 / 2.1, token exchange (RFC 8693), resource indicators (RFC 8707), mTLS token binding, and DPoP specifications
+- RFC 7523 (JWT profile for client authentication and authorization grants), the IETF OAuth working group draft on identity and authorization chaining across domains (draft-ietf-oauth-identity-chaining, revision 16, June 2026), and the Identity Assertion JWT Authorization Grant draft (draft-ietf-oauth-identity-assertion-authz-grant, revision 04, May 2026), all cited as work in progress and reverified before adoption
+- Provider on-behalf-of documentation for the dialect in use, including the Microsoft Entra Agent ID on-behalf-of flow for agent identities and Amazon Bedrock AgentCore Identity on-behalf-of token exchange, recorded with version and review date under §6.6
+- Red Canary (now Zscaler), Investigating suspicious AI workflows in Microsoft Entra Agent ID, three-part detection walkthrough (2026), as a lab-scenario source for distinguishing autonomous, agent-user, and on-behalf-of activity in identity logs
 - OpenID Connect Core (ID token validation, for principal assertion binding)
 - CSA MAESTRO and MITRE ATLAS threat-modeling sources
 - OWASP Top 10 for LLM Applications and OWASP agentic security guidance
@@ -1342,8 +1376,10 @@ Secure agentic AI requires independently enforced controls **around** the model.
 
 ## Version History
 
-**Version:** Consolidated 2.11
+**Version:** Consolidated 2.12
 **Status:** Implementation guidance. Regulatory mappings are planning aids, not legal advice, certification, or evidence of conformity.
+
+**Changes from 2.11:** on-behalf-of delegation added as a requirement set in §4.3, covering delegation rather than impersonation semantics, actor pre-authorization through may_act or equivalent policy, scope intersection at exchange time, dual authority checks at the resource, consent as a recorded and expiring grant, revocation propagation, standing grants for user-absent operation, and provider dialects (RFC 8693, Entra jwt-bearer on-behalf-of, AgentCore Identity, identity chaining, ID-JAG); delegated-authority mode added to system classification (§2.1); first-hop delegation and the actor chain as an audit record rather than an authorization input (§4.2); user tokens and standing grants classed as credentials excluded from the runtime (§4.5), with the broker performing the exchange (§5.2); impersonation and runtime-held user tokens added to the tool threat model (§6.1); token passthrough prohibition rewritten around the exchange with the server as a further actor, and the sketch extended with an actor token (§6.3); delegated reach scored as the agent's own on the trifecta, with the Red Canary Entra Agent ID walkthrough as the illustrative shape (§7.8); subject and actor chain in approval display and approval binding (§8); delegated-authority fields and consent grants in audit records (§9.1); exchange and consent signals (§9.3); five new regression tests and one verification probe (§11); two new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for actor claim, delegation vs. impersonation, ID-JAG, may_act, on-behalf-of, and standing delegation grant (§17); reference additions (§18).
 
 **Changes from 2.10:** decision-rights register added as a required governance artifact (§2.3) and defined in §8 with the four GITL admission tests, permanent HITL entries, evidence-based promotion after an observation period and demotion on incident, register change control with agent writes denied, and skills reservations; broker routes HITL and GITL from the register and records the entry version (§5.2, §9.1); class-wide breaker latch and demotion on a GITL incident (§5.3, §9.4); seeded-error audits with catch rate per validator (§8); catch rate and per-class reversal rate added as monitoring signals, with unmeasured GITL reverting to HITL (§9.3); four new regression tests and one verification probe (§11); register entry required at the production gate (§12); Phase 3 all-HITL with reversal counting and Phase 4 promotion by evidence only (§13); gap-typed partials, the 180-day planned marker, and strict, documented, and provisional coverage figures with foothold, absent, and unknown counts (§14); two new coverage rows (§14); Priority 1 and 2 additions (§16); glossary entries for decision-rights register, gap type, GITL, reversal rate, seeded-error audit, and skills reservation, with HITL revised (§17); reference addition (§18). Sourced from Cloud Security Alliance, Frontier Ready Assessment Framework v1.0 public edition (2 October 2026).
 
@@ -1361,4 +1397,4 @@ Secure agentic AI requires independently enforced controls **around** the model.
 **Changes from 2.2 (delivered in 2.3):** sixth governing principle on capability combinations; trifecta added to system classification (§2.1); server-side authorization decisions, OAuth 2.1, and resource-indicator token binding (§4.3); server registration and shadow discovery (§4.6); per-server kill switch (§5.3); OAuth client/authorization-server role separation (§6.3); infrastructure-enforced tenant isolation and ingestion-time classification (§7.4); intent integrity and the capability trifecta (§7.8); log-store minimization and retention (§9.1); SIEM/XDR integration and three new monitoring signals (§9.3); compromise-scenario drills (§9.4); tenant-isolation and telemetry tests plus verification probes (§11); new coverage rows (§14); Priority 1 and 2 additions (§16); glossary and reference additions (§17, §18).
 **Changes from 2.1 (delivered in 2.2):** secret custody and model-context exclusion, and untrusted project configuration (§4.5); local-transport binding and origin validation (§6.2); full-schema metadata scanning, display-control stripping, and TOFU pinning (§6.4); error design (§6.5); service surface hardening baseline (§6.7); safe command and process execution (§7.6); model invocation guardrails (§7.7).
 
-**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.11 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
+**Numbering note:** Section numbers 1–18 and every cross-reference established in 2.1 are unchanged. Additions in 2.2 through 2.12 are placed within the relevant section, at the tail where the section is prose and at the natural position where it is a list.
