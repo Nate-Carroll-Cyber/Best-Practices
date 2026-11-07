@@ -1,6 +1,6 @@
 # MCP Security Best Practices
 
-This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements. Items marked **(MCP Spec)** are additions on tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) drawn from the MCP specification, revision 2025-11-25, and the MCP maintainers' post *Tool Annotations as Risk Vocabulary*, 16 March 2026. Items marked **(OBO)** are additions on on-behalf-of delegation drawn from RFC 8693, *OAuth 2.0 Token Exchange*, the Microsoft Entra Agent ID and Amazon Bedrock AgentCore Identity OBO documentation, the IETF identity chaining and Identity Assertion JWT Authorization Grant drafts, and the MCP Enterprise-Managed Authorization extension.
+This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements. Items marked **(MCP Spec)** are additions on tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) drawn from the MCP specification and the MCP maintainers' post *Tool Annotations as Risk Vocabulary*, 16 March 2026, together with the stateless-core, caching, authorization, and deprecation changes of revision 2026-07-28. Items marked **(OBO)** are additions on on-behalf-of delegation drawn from RFC 8693, *OAuth 2.0 Token Exchange*, the Microsoft Entra Agent ID and Amazon Bedrock AgentCore Identity OBO documentation, the IETF identity chaining and Identity Assertion JWT Authorization Grant drafts, and the MCP Enterprise-Managed Authorization extension. Items marked **(Six Pillars)** are additions drawn from the CSA AI Safety Working Group draft *The Six Pillars of MCP Security* (2026 working draft), kept where a shipping implementation or a direct protocol fact backs them and marked as a target state where none does.
 
 ## Core Principles
 
@@ -11,7 +11,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 5. **Never turn untrusted text into executable strings.** Use structured process APIs, parameterized queries, validated paths, and allowlisted operations.
 6. **Constrain external communication.** Limit the channels through which credentials and private data can leave, and monitor unexpected outbound connections.
 7. **Make changes and actions attributable.** Log permission changes and preserve per-agent action attribution so incidents can be investigated and contained.
-8. **Treat retrieved content as data, never authority.** Keep system instructions separate from untrusted context and validate that planned actions remain aligned with the user’s original intent.
+8. **Treat retrieved content as data, never authority.** Keep system instructions separate from untrusted context and validate that planned actions remain aligned with the user’s original intent. Label each item that enters context with its origin, and give anything derived from several items the most restrictive label among them. **(Six Pillars)**
 9. **Isolate every security boundary.** Enforce separation between tenants, sessions, environments, identities, and OAuth roles rather than relying on conventions or assumed ownership.
 10. **Break the lethal trifecta.** For every agent, determine whether it can access private data, ingest untrusted content, and communicate externally. Remove at least one leg wherever possible.
 11. **Protect availability.** Bound task complexity, recursion, and resource consumption; rate-limit and quota agent workloads so exhaustion techniques cannot stall the system. **(NSA CSI)**
@@ -92,7 +92,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 ### Preventive controls
 
 - Digitally sign tool schemas and manifests; reject definitions that do not have a valid signature.
-- Pin tool definitions at the host using trust on first use (TOFU), and flag later changes.
+- Pin tool definitions at the host using trust on first use (TOFU), and flag later changes. Compare a changed definition against the pinned baseline instead of treating the change itself as an attack, because revision 2026-07-28 marks `tools/list` responses cacheable with `ttlMs` and `cacheScope` and a mid-session definition change is a normal event. Hash-baseline comparison of this kind ships in mcp-scan tool pinning and in runtime proxies such as Pipelock and Aegis. **(Six Pillars)**
 - Include `annotations` in the signed and pinned definition. Quarantine a tool whose `destructiveHint` changes from `true` to `false`, or whose `readOnlyHint` changes from `false` to `true`, after pinning. A lowered risk declaration on an already-trusted tool is a rug-pull signal. **(MCP Spec)**
 - Bind each tool to known provenance and a known-good version.
 - Scan the **entire** tool schema—not just the tool name or description—including:
@@ -106,7 +106,8 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Require RBAC for any writable schema registry.
 - Require human review before schema edits are promoted to production.
 - Reject or quarantine unexpected runtime schema changes.
-- Re-prompt for informed user consent whenever a connected server’s capabilities or data access change; never let an already-trusted server expand silently. **(NSA CSI)**
+- Reject a malformed or non-conforming tool definition at discovery one tool at a time, and keep the server's other tools available, so one bad definition neither takes the server down nor hides behind an outage. **(Six Pillars)**
+- Re-prompt for informed user consent whenever a connected server’s capabilities or data access change; never let an already-trusted server expand silently. When a pinned definition changes, show the approved text and the current text together and require the person's acknowledgment before the changed tool runs again. Current clients prompt once per server at first approval and do not prompt again on a definition change, so this is a requirement to place on the client rather than a behavior to assume. **(NSA CSI, Six Pillars)**
 - Do not assume a user approval step is sufficient if the model has already consumed untrusted tool metadata; validate metadata before it reaches the model.
 - Isolate tools so one tool cannot silently manipulate another tool into accessing or exporting unrelated private data.
 - Design each tool for a single purpose with explicit boundaries. A "do anything" tool cannot be scoped, allowlisted, or reasoned about, and its schema is the largest possible poisoning surface. **(CoSAI)**
@@ -121,6 +122,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Find tools that lack provenance or version binding.
 - Alert whenever the MCP tool list or any tool definition changes.
 - Treat a tool rewriting its own definition as a security signal.
+- Find clients that re-verify a changed definition silently and run the tool without showing the person what changed. **(Six Pillars)**
 - Find tools whose description or parameter set spans several unrelated capabilities. **(CoSAI)**
 - Find tools whose name, description, or backing API call uses a delete, drop, overwrite, truncate, or purge verb while `destructiveHint` is `false` or absent. **(MCP Spec)**
 - Run each tool in a sandbox and compare observed side effects against its declared hints. A tool declared `readOnlyHint: true` that writes, or `destructiveHint: false` that deletes or overwrites, is a finding. **(MCP Spec)**
@@ -206,6 +208,8 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Anchor the user’s original objective in the system prompt as a fixed, authoritative reference.
 - Treat all retrieved pages, documents, issues, files, code comments, and tool output as untrusted data—not instructions.
 - Tag or fence retrieved content explicitly as untrusted context before it reaches the planning model.
+- Label every item that enters context with the server it came from, the principal that authorized the fetch, whether it came from the open world, and whether the person typed it, and give anything the model derives from several inputs the most restrictive label among them, so a summary of a web page, a plan built from it, a tool argument, and a state handle all carry the page's untrusted label. Microsoft Purview applies the most restrictive source sensitivity label to Copilot and Agent 365 output, and Microsoft Agent Framework ships FIDES as experimental middleware that propagates the most restrictive input label to outputs and blocks a tool call while untrusted content is in scope. The first FIDES release accepted a `security_label` key inside attacker-supplied data as an authoritative trust label, so take a label only from the middleware's own record of where content came from and never from a field inside the content. **(Six Pillars)**
+- Treat lowering a label as a target-state control with no current implementation. Where a host supports it, record each downgrade as a scoped, expiring declassification that names the authorizing person, and refuse any session-wide or blanket downgrade. **(Six Pillars)**
 - Keep trusted system instructions structurally separate from retrieved content; do not merge them into an undifferentiated prompt.
 - Validate that every planned or requested action remains aligned with the user’s original intent.
 - Add a gate between planning and consequential actions so the agent cannot move directly from reading context to deleting, sending, modifying, or exporting.
@@ -213,14 +217,16 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Let tool annotations only raise a gate. `destructiveHint: true` routes the call to the preview and confirm stage. `destructiveHint: false` or `readOnlyHint: true` skips a confirmation only when the server is in the trusted registry, because the spec requires clients to treat annotations from untrusted servers as untrusted and a server can declare `readOnlyHint: true` and still delete. **(MCP Spec)**
 - Treat a tool with no annotations as destructive, non-idempotent, and open-world, matching the spec defaults (`destructiveHint` defaults to `true`). Verify the client applies those defaults, since clients differ in how strictly they honor them. **(MCP Spec)**
 - Provide a rollback or undo path for every consequential tool, using snapshots, reversible operations, or retained drafts. A tool with no undo should carry the highest gate. **(CoSAI)**
-- Use an independent guardrail model or control outside the primary agent’s context to detect intent drift and mismatched actions. The guardrail advises. It never authorizes. Authorization decisions rest on deterministic policy and verified identity, never on the judgment of any model, primary or guardrail. **(CoSAI)**
+- Use an independent guardrail model or control outside the primary agent’s context to detect intent drift and mismatched actions. The guardrail advises. It never authorizes. Authorization decisions rest on deterministic policy and verified identity, never on the judgment of any model, primary or guardrail. Calibrate the guardrail the way an evaluator is calibrated. Hold a labeled reference set of injected and clean traces, run the guardrail against it on a schedule, track false positive and false negative rates, and re-baseline whenever the guardrail model or its prompt changes, since a prompt change alone can move the false positive rate with nothing changed in the agent under test. LangSmith's Align Evaluator and Braintrust scorer alignment run this loop for quality judges against human-labeled examples, and the same loop applies to a security guardrail. **(CoSAI, Six Pillars)**
 - Do not rely solely on human approval for safety. Approvers fatigue and start confirming by habit. Pair confirmation prompts with hard authorization boundaries, keep the prompt rate low enough that each one gets read, and make security-relevant prompts state the consequence plainly. Where the server can request confirmation itself through MCP elicitation, do so from the server, so the check does not depend on the client's implementation. **(CoSAI)**
 - On trusted servers, set `readOnlyHint: true` on read-only tools and `destructiveHint: false` on additive tools so confirmation prompts fire only for calls that can delete or overwrite. Accurate hints are what keep the prompt rate low enough to be read. **(MCP Spec)**
 - Re-anchor the original intent during long-running sessions and multi-step workflows.
 - Treat context preconditioning as an attack vector: probabilistic interpretation of prior context means an actor can seed context history to steer the agent toward a specific unsafe outcome; constrain how much prior context can influence consequential decisions. **(NSA CSI)**
+- Validate every tool result in three steps before it reaches the model. First, confirm the message is well-formed JSON-RPC 2.0 for the protocol version the request declared in `_meta`, accept every legal shape including `isError: true` and unstructured content, and reject anything malformed as a protocol error. Second, where the tool declares an `outputSchema`, validate `structuredContent` against it and withhold the result on mismatch as a server fault, and treat a tool with no `outputSchema` as conforming, since the schema is optional and a blanket reject-on-mismatch rule rejects conforming servers. Third, apply the content controls in this section regardless of the first two steps, because schema-valid content still carries prompt injection. The official SDKs perform the second step when a schema is declared. **(Six Pillars)**
 - Inspect and filter each tool’s output before passing it to the next component in a chained pipeline — content length checks, disallowed-keyword scanning, and detection of injected prompts or code elements that could alter downstream behavior. **(NSA CSI)**
+- Treat a server's sampling request, which asks the client to run model inference for the server, as untrusted input that shapes the prompt and parameters of that inference. Revision 2026-07-28 deprecates sampling under SEP-2577 and replaces server-initiated `sampling/createMessage` with the multi round-trip `input_required` result, while deprecated sampling keeps working for at least twelve months, so require the person's approval of each sampling request, log the prompt it carries, and refuse sampling from servers outside the trusted registry for the rest of the window. **(MCP Spec, Six Pillars)**
 - Avoid giving one agent or credential simultaneous access to untrusted public content, sensitive private data, and unrestricted outbound actions.
-- Break at least one leg of the private-data/untrusted-content/external-communications trifecta.
+- Break at least one leg of the private-data/untrusted-content/external-communications trifecta. Score the legs across every server the agent can reach together, since read access on one server and write access on another form a copy-out path that neither server sees on its own. mcp-scan and mcp-scrutiny report these cross-server capability pairs at scan time. Blocking the aggregate at runtime as a scope violation is a target state with no current gateway implementation. **(Six Pillars)**
 
 ### Detection and review
 
@@ -230,6 +236,9 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Find high-impact tools that execute in a single call with no preview stage, and consequential tools with no rollback path. **(CoSAI)**
 - Find approval flows that fire often enough that approvers no longer read them. **(CoSAI)**
 - Find clients that auto-approve calls on the strength of `readOnlyHint: true` or `destructiveHint: false` from servers outside the trusted registry, and clients that run unannotated tools without confirmation. **(MCP Spec)**
+- Find clients that reject results from tools with no `outputSchema`, and clients that pass `structuredContent` to the model after it fails a declared schema. **(Six Pillars)**
+- Find guardrail or judge models with no labeled reference set and no recorded false positive and false negative rates. **(Six Pillars)**
+- Find servers that still issue sampling requests and clients that fulfill them without per-request approval. **(MCP Spec, Six Pillars)**
 - Find prompts that merge system instructions and untrusted context without clear boundaries.
 - Test long-running sessions for gradual intent drift.
 - Test identical prompts under varied context histories for divergent, unsafe interpretations — non-deterministic behavior across deployments is itself an exploitable gap. **(NSA CSI)**
@@ -255,6 +264,8 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Classify each tool's destructiveness in the gateway or registry record and enforce from that record. The server's declared `destructiveHint` is an input to review, never the authorization fact, and a tool with no registry classification fails closed to destructive. **(MCP Spec)**
 - Enforce scope checks for every tool and resource request.
 - Use OAuth resource indicators to bind a token to its intended target server and prevent cross-resource replay.
+- Validate the `iss` parameter on every authorization response before redeeming a code, as revision 2026-07-28 requires under RFC 9207, and treat client credentials as bound to the authorization server that minted them, so a credential registered with one issuer is refused by every other. Prefer Client ID Metadata Documents over Dynamic Client Registration, which the revision deprecates. **(MCP Spec)**
+- Check that the `Mcp-Method` and `Mcp-Name` headers on each Streamable HTTP request match the JSON-RPC body, since gateways and policy engines authorize on the headers before parsing the body and a mismatch is a smuggling path. **(MCP Spec)**
 - Never pass a client token through to a downstream service.
 - Use token exchange or an OBO flow so an agent receives its own narrowly scoped downstream token that names the person as subject and the agent as actor. Send the agent's own actor credential with the exchange. RFC 8693 states that delegation is impossible with only a subject token, so an exchange that omits the actor token produces impersonation, and agent clients should be refused it. **(OBO)**
 - Pre-authorize which agents may act for a person through the may_act claim in the person's token or an equivalent authorization-server policy, and have the authorization server refuse every other requester. **(OBO)**
@@ -293,6 +304,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 ### Preventive controls
 
 - Record agent activity as structured, queryable, tamper-evident logs.
+- State for each evidence type who relies on it, whether internal audit, an external auditor, a regulator, or a counterparty, what that party must trust to accept it, such as the producing host, the log pipeline, or key custody, and whether a party that trusts none of those can verify the record offline from its signatures alone. RFC 9334 and SLSA define the verifier and relying-party roles this statement follows. **(Six Pillars)**
 - Capture every tool call with, at minimum:
   - verified identity;
   - tool name;
@@ -363,7 +375,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Use ephemeral, per-session context that is destroyed when the session ends.
 - Isolate context by tenant, user, agent, and workflow using infrastructure-enforced namespaces.
 - Ensure one tenant’s namespace is technically incapable of answering another tenant’s queries.
-- Revalidate session and tenant ownership on every request; never trust cached or implicit session-to-user mappings.
+- Revalidate session and tenant ownership on every request; never trust cached or implicit session-to-user mappings. Revision 2026-07-28 removes the protocol session and `Mcp-Session-Id`, and a server that needs state across calls returns an explicit handle from a tool that the model passes back as an argument, so a handle for a file, a job, a resource, or saved state is a plain string that any caller who learns it can replay. Bind each handle at issue time to the person and agent that received it, check that binding on every use, and revoke it the way a stolen token is revoked. No MCP client or gateway does this today, so treat the binding as a target state and keep handles short-lived and unguessable until it exists. **(Six Pillars)**
 - Avoid shared singleton state, shared context buffers, or shared vector stores unless isolation is explicitly enforced and tested.
 - Classify and tag sensitive data as it enters context.
 - Apply policy at ingestion to block, mask, minimize, or restrict sensitive content before it is stored.
@@ -378,6 +390,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Inventory shared context buffers and vector stores used by multiple users, tenants, agents, or workflows.
 - Check whether context persists across users or sessions.
 - Find reused context or server-side state whose ownership is not revalidated on every request.
+- Find state handles that any authenticated caller can replay regardless of who received them. **(Six Pillars)**
 - Identify sensitive data that enters context without classification or tags.
 - Find tools that return whole records, full rows, or raw API responses where a named subset of fields would serve. **(CoSAI)**
 - Find context with no TTL, expiry, or automatic purge.
@@ -463,6 +476,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Schema registries enforce RBAC and reviewed promotion.
 - [ ] Tool-list and runtime schema changes trigger alerts.
 - [ ] Capability or data-access changes on a connected server trigger renewed user consent. **(NSA CSI)**
+- [ ] A changed tool definition is compared to its pinned baseline and shown to the person for acknowledgment before the tool runs again. **(Six Pillars)**
 - [ ] Every tool is single-purpose with explicit boundaries. **(CoSAI)**
 - [ ] Tool annotations are signed and pinned with the schema, set to the worst-case argument path, and a lowered risk hint quarantines the tool. **(MCP Spec)**
 
@@ -496,6 +510,7 @@ The controls above apply to every deployment. Several of them are conditional on
 
 - [ ] The user’s objective is anchored in trusted system instructions.
 - [ ] Retrieved content is explicitly marked and handled as untrusted data.
+- [ ] Context items carry origin labels, and derived content inherits the most restrictive label of its inputs. **(Six Pillars)**
 - [ ] System instructions and retrieved content remain structurally separate.
 - [ ] Consequential actions require an intent-alignment check.
 - [ ] High-impact actions use a two-stage commit with a preview and a bound confirmation. **(CoSAI)**
@@ -504,6 +519,9 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] An independent guardrail detects intent drift and never authorizes. **(CoSAI)**
 - [ ] Human approval is paired with hard boundaries and kept at a rate approvers actually read. **(CoSAI)**
 - [ ] Chained tool outputs are inspected before reaching the next component. **(NSA CSI)**
+- [ ] Tool results pass envelope validation, declared-schema validation where an `outputSchema` exists, and content controls, in that order. **(Six Pillars)**
+- [ ] The guardrail is calibrated against a labeled reference set with tracked false positive and false negative rates. **(Six Pillars)**
+- [ ] Sampling requests require per-request approval and are refused from servers outside the trusted registry. **(MCP Spec, Six Pillars)**
 - [ ] Every production agent has a current trifecta scorecard.
 
 ### Authentication and authorization
@@ -513,6 +531,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Authorization is enforced server-side using verified identity and scope.
 - [ ] Tool destructiveness is classified in the gateway or registry, not taken from the server's declared hint. **(MCP Spec)**
 - [ ] Tokens are bound to their intended resource.
+- [ ] Authorization responses are issuer-validated and client credentials are issuer-bound. **(MCP Spec)**
 - [ ] Client tokens are never passed through downstream.
 - [ ] Downstream access uses token exchange or OBO delegation that names the person as subject and the agent as actor, never impersonation. **(OBO)**
 - [ ] OBO exchanges are pre-authorized per agent and person, scoped to the intersection of consent, registry entry, and task, and checked for both authorities at the resource. **(OBO)**
@@ -532,6 +551,8 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Protocol anomalies (malformed/repeated requests, authorization failures, RBAC violations) generate native alerts. **(NSA CSI)**
 - [ ] Telemetry cannot be silently disabled or rewritten.
 - [ ] Incident-response and telemetry drills are performed regularly.
+- [ ] A safe state is defined per incident class, with a recovery gate before normal operation resumes. **(Six Pillars)**
+- [ ] Each evidence type names its relying party, what that party must trust, and whether it verifies offline. **(Six Pillars)**
 
 ### Inventory and governance
 
@@ -586,6 +607,7 @@ Every MCP deployment should meet these six pillars:
    - Tools are single-purpose and return only the fields the task needs. **(CoSAI)**
 4. **Schema-driven validation**
    - Inputs and outputs are validated at the MCP boundary.
+   - Tool results pass envelope validation always and declared-schema validation only where an `outputSchema` exists. **(Six Pillars)**
    - Retrieved text is always treated as data, never as a command.
    - Sensitive messages are signed, time-bound, and replay-protected; deserialization is schema-enforced. **(NSA CSI)**
 5. **Hardened deployment and oversight**
@@ -618,13 +640,14 @@ A mature MCP security program continuously performs five functions:
    - Maintain structured audit pipelines and anomaly detection.
    - Track and patch MCP-related CVEs as a formal, inventory-linked process. **(NSA CSI)**
    - Exercise compromise scenarios: determine who is paged, where the logs are, and how the kill switch is activated.
+   - Define a safe state per incident class instead of one read-only fallback. For a confidentiality event, block reads and egress, since reads are the harm during exfiltration. For identity compromise, revoke credentials and sessions. For context poisoning, reset context and quarantine the source, since continued retrieval spreads the poison. End each with side-effect reconciliation and an explicit recovery gate before normal operation resumes. **(Six Pillars)**
 
 ## Immediate-Priority Checklist
 
 1. Audit every MCP source: determine whether each server is vendor-built or from an unreviewed repository.
 2. Move static API keys to a vault and scan logs for token-like values.
 3. Inventory all agent write and delete capabilities and remove those that are unnecessary.
-4. Validate inputs at the MCP boundary and ensure retrieved text is never treated as a command.
+4. Validate inputs at the MCP boundary, validate tool results in the three-step order, and ensure retrieved text is never treated as a command.
 5. Search for string-interpolated shell calls and replace them with structured process APIs.
 6. Audit each agent’s effective production permissions—not only its documented permissions.
 7. Confirm that client tokens are never passed through to downstream services and that every OBO exchange carries the agent's actor token. **(OBO)**
@@ -649,3 +672,13 @@ A mature MCP security program continuously performs five functions:
 10. Parecki, McGuinness, Campbell. *Identity Assertion JWT Authorization Grant*. draft-ietf-oauth-identity-assertion-authz-grant, revision 04, May 2026, work in progress. https://www.ietf.org/archive/id/draft-ietf-oauth-identity-assertion-authz-grant-02.html
 11. Model Context Protocol. *Enterprise-Managed Authorization* extension, io.modelcontextprotocol/enterprise-managed-authorization, stable. https://modelcontextprotocol.io/extensions/auth/enterprise-managed-authorization
 12. Red Canary (now Zscaler). *Investigating suspicious AI workflows in Microsoft Entra Agent ID: Assistive agents*. 2026, lab-scenario detection walkthrough. https://redcanary.com/blog/threat-detection/entra-id-ai-workflows-assistive-agents/
+13. Model Context Protocol. *MCP 2026-07-28 Specification* release post, 28 July 2026. https://blog.modelcontextprotocol.io/posts/2026-07-28/
+14. Cloud Security Alliance AI Safety Working Group. *The Six Pillars of MCP Security*. Working draft, 2026.
+15. Microsoft. *Security* (FIDES information-flow control middleware), Microsoft Agent Framework documentation. https://learn.microsoft.com/en-us/agent-framework/agents/security
+16. APISec Research Labs. *Trust Me, Bro: Forging Security Labels in Microsoft's FIDES Middleware*. 2026. https://labs.apisec.ai/research/articles/trust-me-bro-forging-security-labels-fides
+17. Microsoft. *Define Sensitivity Label Inheritance Requirements for AI Outputs*. Zero Trust Assessment, AI_080. https://microsoft.github.io/zerotrustassessment/docs/workshop-guidance/AI/AI_080
+18. Invariant Labs. *mcp-scan*, tool pinning. https://github.com/invariantlabs-ai/mcp-scan
+19. policylayer. *MCP rug pull*, MCP Security reference. https://policylayer.com/attacks/mcp-rug-pull
+20. LangChain. *Improve LLM-as-judge evaluators using human feedback*. LangSmith documentation. https://docs.langchain.com/langsmith/improve-judge-evaluator-feedback
+21. Braintrust. *LLM-as-a-judge*. Encyclopedia entry. https://braintrust.dev/encyclopedia/llm-as-a-judge
+22. Birkholz, Thaler, Richardson, Smith, Pan. *Remote ATtestation procedureS (RATS) Architecture*. RFC 9334, January 2023. https://datatracker.ietf.org/doc/rfc9334/
