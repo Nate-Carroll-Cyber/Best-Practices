@@ -1,6 +1,6 @@
 # MCP Security Best Practices
 
-This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements. Items marked **(MCP Spec)** are additions on tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) drawn from the MCP specification and the MCP maintainers' post *Tool Annotations as Risk Vocabulary*, 16 March 2026, together with the stateless-core, caching, authorization, and deprecation changes of revision 2026-07-28. Items marked **(OBO)** are additions on on-behalf-of delegation drawn from RFC 8693, *OAuth 2.0 Token Exchange*, the Microsoft Entra Agent ID and Amazon Bedrock AgentCore Identity OBO documentation, the IETF identity chaining and Identity Assertion JWT Authorization Grant drafts, and the MCP Enterprise-Managed Authorization extension. Items marked **(Six Pillars)** are additions drawn from the CSA AI Safety Working Group draft *The Six Pillars of MCP Security* (2026 working draft), kept where a shipping implementation or a direct protocol fact backs them and marked as a target state where none does.
+This guide consolidates the actionable security practices in the supplied text. It covers the complete MCP Top 10, removes case-study narrative and repetition, and retains preventive controls, detection checks, immediate actions, and program-level guidance. Items marked **(NSA CSI)** are additions drawn from NSA, *Model Context Protocol (MCP): Security Design Considerations for AI-Driven Automation*, U/OO/6030316-26, May 2026 — including a new MCP11 availability category. Items marked **(CoSAI)** are additions drawn from the Coalition for Secure AI, *Model Context Protocol (MCP) Security* white paper, approved 8 January 2026, including a new section on deployment pattern requirements. Items marked **(MCP Spec)** are additions on tool annotations (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint`) drawn from the MCP specification and the MCP maintainers' post *Tool Annotations as Risk Vocabulary*, 16 March 2026, together with the stateless-core, caching, authorization, and deprecation changes of revision 2026-07-28. Items marked **(OBO)** are additions on on-behalf-of delegation drawn from RFC 8693, *OAuth 2.0 Token Exchange*, the Microsoft Entra Agent ID and Amazon Bedrock AgentCore Identity OBO documentation, the IETF identity chaining and Identity Assertion JWT Authorization Grant drafts, and the MCP Enterprise-Managed Authorization extension. Items marked **(Six Pillars)** are additions drawn from the CSA AI Safety Working Group draft *The Six Pillars of MCP Security* (2026 working draft), kept where a shipping implementation or a direct protocol fact backs them and marked as a target state where none does. Items marked **(mcp-gateway)** are additions drawn from the openziti/mcp-gateway code base at v0.1.11 (August 2026), where each control is implemented, and each names the test that proves it is in place.
 
 ## Core Principles
 
@@ -41,6 +41,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Check logs for unredacted prompts and secret material.
 - Identify tokens whose lifetime exceeds the session or task.
 - Find user tokens or refresh tokens held in agent runtime memory, environment variables, or configuration rather than in the vault. **(OBO)**
+- Find stdio MCP servers whose process environment contains gateway or host secrets they were never configured to receive. **(mcp-gateway)**
 - Inventory shared and static service accounts.
 - Review whether project configuration can redirect authenticated traffic or auto-approve MCP servers before a trust decision.
 
@@ -107,9 +108,10 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Require human review before schema edits are promoted to production.
 - Reject or quarantine unexpected runtime schema changes.
 - Reject a malformed or non-conforming tool definition at discovery one tool at a time, and keep the server's other tools available, so one bad definition neither takes the server down nor hides behind an outage. **(Six Pillars)**
+- Page `tools/list` to the last `nextCursor` before applying any allow or deny filter, and fail the backend when a page request errors, because a filter applied to the first page alone leaves every tool on later pages unfiltered and reachable by name. openziti/mcp-gateway shipped that defect until v0.1.8. Test it with a backend that advertises more tools than one page holds and confirm the gateway's exposed tool count equals the backend's advertised count. **(mcp-gateway)**
 - Re-prompt for informed user consent whenever a connected server’s capabilities or data access change; never let an already-trusted server expand silently. When a pinned definition changes, show the approved text and the current text together and require the person's acknowledgment before the changed tool runs again. Current clients prompt once per server at first approval and do not prompt again on a definition change, so this is a requirement to place on the client rather than a behavior to assume. **(NSA CSI, Six Pillars)**
 - Do not assume a user approval step is sufficient if the model has already consumed untrusted tool metadata; validate metadata before it reaches the model.
-- Isolate tools so one tool cannot silently manipulate another tool into accessing or exporting unrelated private data.
+- Isolate tools so one tool cannot silently manipulate another tool into accessing or exporting unrelated private data. Namespace every exposed tool as the backend identifier, a separator, and the original tool name, so two servers that both expose `read_file` cannot shadow each other and the call names the server that receives it. openziti/mcp-gateway does this with `_` as the default separator, giving `filesystem_read_file`. The prefix is unambiguous only when the separator cannot appear inside a backend identifier, and mcp-gateway does not enforce that, so backend `fs` with tool `x_y` and backend `fs_x` with tool `y` both become `fs_x_y` and the later registration silently replaces the earlier one in `aggregator/namespace.go`. Reject backend identifiers that contain the separator and fail startup on any post-prefix collision instead of overwriting. Test it with two backends whose prefixed names collide and confirm the gateway refuses to start. **(mcp-gateway)**
 - Design each tool for a single purpose with explicit boundaries. A "do anything" tool cannot be scoped, allowlisted, or reasoned about, and its schema is the largest possible poisoning surface. **(CoSAI)**
 - Set `destructiveHint` to the worst outcome any accepted argument can produce. A tool with a `mode`, `force`, or `overwrite` parameter that can delete or overwrite carries `destructiveHint: true`, or is split into separate additive and destructive tools so each hint is exact. **(MCP Spec)**
 
@@ -123,6 +125,8 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Alert whenever the MCP tool list or any tool definition changes.
 - Treat a tool rewriting its own definition as a security signal.
 - Find clients that re-verify a changed definition silently and run the tool without showing the person what changed. **(Six Pillars)**
+- Find gateways that apply tool filters before paging `tools/list` to completion. **(mcp-gateway)**
+- Find gateways that overwrite rather than refuse when two namespaced tool names collide. **(mcp-gateway)**
 - Find tools whose description or parameter set spans several unrelated capabilities. **(CoSAI)**
 - Find tools whose name, description, or backing API call uses a delete, drop, overwrite, truncate, or purge verb while `destructiveHint` is `false` or absent. **(MCP Spec)**
 - Run each tool in a sandbox and compare observed side effects against its declared hints. A tool declared `readOnlyHint: true` that writes, or `destructiveHint: false` that deletes or overwrites, is a finding. **(MCP Spec)**
@@ -145,6 +149,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Keep MCP development and test tooling patched — e.g., the MCP Inspector RCE (CVE-2025-49596) fixed in v0.14.1. **(NSA CSI)**
 - Sandbox third-party plugins so a compromised component cannot compromise the entire environment.
 - Monitor and restrict plugin network access, especially calls to unknown domains.
+- Configure the gateway's own HTTP clients to backends so they do not follow redirects and do not read `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` from the environment, and require an explicit per-backend opt-in for either. A backend that answers a tool call with a 302 to an attacker host otherwise moves the gateway's request, `Authorization` header included, to that host, and an inherited proxy variable routes every call through a host the operator never approved. openziti/mcp-gateway refuses both by default since v0.1.8 and exposes `allow_redirects` and `allow_environment_proxy` for the exceptions. Test it by pointing a backend at a server that returns a 302 and confirming the gateway returns an error rather than following it. **(mcp-gateway)**
 - Inventory MCP servers running on developer machines.
 - Bind local development servers and tools to `127.0.0.1`/localhost rather than `0.0.0.0` or all network interfaces.
 - Require authentication and origin checks for local web interfaces and reject unauthorized cross-origin requests.
@@ -159,6 +164,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Monitor plugins for connections to unknown or unapproved domains.
 - Check local MCP servers for unauthenticated interfaces, permissive origin handling, and network-wide binding.
 - Find local servers exposed over HTTP where `stdio` would serve. **(CoSAI)**
+- Find gateway backend clients that follow redirects or inherit proxy variables. **(mcp-gateway)**
 - Operate a formal process for tracking MCP-related CVEs, vendor advisories, and open-source issue trackers, tied to the server inventory and patch history. **(NSA CSI)**
 
 ### Immediate action
@@ -175,13 +181,14 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Use `--` to terminate option parsing when the invoked command supports it, ensuring subsequent values are treated as data rather than flags.
 - Remove, reject, or safely escape shell metacharacters as defense in depth, including semicolons, pipes, backticks, and command-substitution syntax such as `$()`.
 - Do not automatically execute model-generated code. Add an explicit validation and authorization gate.
-- Validate and constrain file paths to prevent traversal (for example, `../`) and access outside approved directories.
+- Validate and constrain file paths to prevent traversal (for example, `../`) and access outside approved directories. Enforce the same constraint in the gateway, where the server cannot bypass it. For each tool that takes a path, name the argument and the allowed absolute roots in the gateway configuration, have the gateway resolve symlinks, refuse `..` segments and unresolvable paths, and return a tool-level denial without calling the backend when the resolved path falls outside every root. openziti/mcp-gateway implements this as `policy.paths` entries with `tool`, `argument`, and `roots`, and requires each root to be an existing directory at startup. Test it with a symlink inside an allowed root that points outside it and confirm the gateway denies the call. **(mcp-gateway)**
 - Parameterize SQL queries; never interpolate values into SQL strings.
 - Apply context-aware output encoding for every sink a tool writes to, including HTML and other markup rendered to a user or another agent, not only SQL and shell. **(CoSAI)**
 - Allowlist permitted commands, verbs, and operations so destructive or unexpected actions cannot run.
 - Enforce strict schema validation on all deserialized context, configuration, and payload objects; maintain hard isolation between code and data during deserialization (classic insecure-deserialization risk applied to MCP’s serialized context). **(NSA CSI)**
+- Parse each tool call's arguments exactly once at the gateway, reject the call when the JSON carries a duplicate key or more than one top-level value, run every policy check against that parsed object, and forward the same parsed object to the backend rather than the original bytes. Two parsers with different duplicate-key handling otherwise let `{"path":"/safe","path":"/etc/shadow"}` pass the gateway check as `/safe` and reach the server as `/etc/shadow`. openziti/mcp-gateway does this in `aggregator/policy.go` with a decoder that rejects duplicate keys and returns the settled map for dispatch. Test it by sending a duplicate-key argument object through the gateway and confirming a policy error with no backend call. **(mcp-gateway)**
 - Block or restrict parameter forwarding when the origin of the data is ambiguous or potentially user-supplied, so inputs intended for one component cannot be reused by another. **(NSA CSI)**
-- Sandbox local MCP servers and run agents as non-root, without administrator or unrestricted `sudo` privileges.
+- Sandbox local MCP servers and run agents as non-root, without administrator or unrestricted `sudo` privileges. Start each stdio server with an explicit environment and nothing inherited from the gateway or host process, because any process in the spawned tree can read the parent's variables from `/proc/<pid>/environ` on Linux. openziti/mcp-gateway exposes this as `transport.env_policy: closed`, and its default `additive` inherits everything. Verify by reading `/proc/<backend pid>/environ` from inside the backend's sandbox and confirming only the configured keys appear. **(mcp-gateway)**
 - Isolate each tool’s execution context with OS-level mechanisms — seccomp, AppArmor, SELinux, or Windows AppContainers — and explicitly deny runtime access to file systems, model/data files, and internal networks the tool does not require. **(NSA CSI)**
 - Apply the same injection defenses to metadata and protocol fields—such as OAuth authorization URLs—as to conventional user input.
 
@@ -194,6 +201,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Review file operations for unsanitized or unconstrained paths.
 - Find SQL statements built through string interpolation.
 - Review protocol handlers, including OAuth flows, for values inserted into shell commands.
+- Find gateways that forward the client's original argument bytes rather than the object the policy evaluated. **(mcp-gateway)**
 - Map execution findings to CWE-77, CWE-78, CWE-94, and CWE-95 for vulnerability management. **(NSA CSI)**
 
 ### Immediate action
@@ -261,7 +269,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Require mutual authentication between clients, agents, tools, and servers; use mTLS where appropriate. For workload-to-workload identity, a SPIFFE/SPIRE deployment issues and rotates the short-lived cryptographic identities (SVIDs) that mutual authentication needs, without long-lived certificates in configuration. **(CoSAI)**
 - Validate every token server-side, on every request, for authenticity, validity, expiry, intended resource, and authorization for the specific action.
 - Make authorization decisions server-side from verified facts, never from client-supplied identity, roles, or scopes.
-- Classify each tool's destructiveness in the gateway or registry record and enforce from that record. The server's declared `destructiveHint` is an input to review, never the authorization fact, and a tool with no registry classification fails closed to destructive. **(MCP Spec)**
+- Classify each tool's destructiveness in the gateway or registry record and enforce from that record. The server's declared `destructiveHint` is an input to review, never the authorization fact, and a tool with no registry classification fails closed to destructive. **(MCP Spec)** Refuse gateway startup when a policy or classification record names a tool the backend does not advertise, so a renamed tool or a typo in the record cannot leave a tool running under no policy. openziti/mcp-gateway's `ValidateTools` fails startup on that case with the tool name in the error. Test it by renaming one tool in the record and confirming the gateway exits rather than serving. **(mcp-gateway)**
 - Enforce scope checks for every tool and resource request.
 - Use OAuth resource indicators to bind a token to its intended target server and prevent cross-resource replay.
 - Validate the `iss` parameter on every authorization response before redeeming a code, as revision 2026-07-28 requires under RFC 9207, and treat client credentials as bound to the authorization server that minted them, so a credential registered with one issuer is refused by every other. Prefer Client ID Metadata Documents over Dynamic Client Registration, which the revision deprecates. **(MCP Spec)**
@@ -383,7 +391,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 - Give every context item a time-to-live and enforce automatic purging.
 - Treat persistent context as a governed data store with access controls, classification, retention, and deletion requirements.
 - Prevent injected content in shared memory from becoming instructions in later sessions.
-- Add automated tenant-isolation testing to CI.
+- Add automated tenant-isolation testing to CI, and run it through every proxy, bridge, and local HTTP shim in the path rather than against the server alone. openziti/mcp-gateway's `mcp-tools http` served every local agent from one remote MCP session until v0.1.11, so two agents behind the same shim shared backend state while the gateway behind it was isolating correctly. The test opens two client sessions through the same hop and asserts that the far side reports two distinct session identifiers and two separate backend processes. **(mcp-gateway)**
 
 ### Detection and review
 
@@ -398,7 +406,7 @@ This guide consolidates the actionable security practices in the supplied text. 
 
 ### Immediate action
 
-- Write and run a tenant-isolation test that accesses tenant A and then verifies tenant B can see none of tenant A’s data. Add the test to CI for every build.
+- Write and run a tenant-isolation test that accesses tenant A and then verifies tenant B can see none of tenant A’s data. Run it through each intermediary in the path, and add the test to CI for every build.
 
 ## MCP11 — Resource Exhaustion and Availability **(NSA CSI)**
 
@@ -430,6 +438,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - Security rests on the posture of the host. A compromised host means a compromised server, and no MCP control changes that.
 - Use `stdio` transport. It removes the network listener and with it DNS rebinding and cross-origin attacks (MCP04).
 - Sandbox the server and run it as non-root so a poisoned tool cannot escalate on the host (MCP05).
+- Put a stdio policy shim between the client and each local server so allow-list tool filtering and path rules apply before the server sees the call, with `tools.mode: allow` naming the read tools to expose and `policy.paths` binding each path argument to its roots (MCP02, MCP05). openziti/mcp-gateway's `aggregator` package implements both and serves on stdio through its embedding API, while the shipped `mcp-gateway run` binary serves only over zrok or Agora and `mcp-bridge` exposes a local server to the network rather than filtering it, so a local-only deployment needs a small wrapper around the package or an equivalent shim. **(mcp-gateway)**
 - Appropriate for development and personal use. Not appropriate for anything that handles another person's data.
 
 ### Single-tenant remote (one organization, reached over the network)
@@ -477,6 +486,8 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Tool-list and runtime schema changes trigger alerts.
 - [ ] Capability or data-access changes on a connected server trigger renewed user consent. **(NSA CSI)**
 - [ ] A changed tool definition is compared to its pinned baseline and shown to the person for acknowledgment before the tool runs again. **(Six Pillars)**
+- [ ] Tool discovery pages to completion before filters apply, and a policy that names an unadvertised tool fails startup. **(mcp-gateway)**
+- [ ] Exposed tools are namespaced by backend, the separator is barred from backend identifiers, and post-prefix collisions fail startup. **(mcp-gateway)**
 - [ ] Every tool is single-purpose with explicit boundaries. **(CoSAI)**
 - [ ] Tool annotations are signed and pinned with the schema, set to the worst-case argument path, and a lowered risk hint quarantines the tool. **(MCP Spec)**
 
@@ -487,6 +498,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Dependency scanning runs in CI.
 - [ ] Third-party plugins are sandboxed.
 - [ ] Unexpected outbound domains are blocked or alerted on.
+- [ ] Gateway backend clients refuse redirects and environment proxies unless a backend opts in. **(mcp-gateway)**
 - [ ] Outbound traffic flows through a filtering egress proxy or DLP pinned to approved resource URLs and methods. **(NSA CSI)**
 - [ ] Maintenance status is verified; archived/unmaintained servers are not adopted, and MCP CVEs are formally tracked. **(NSA CSI)**
 - [ ] Local services bind only to localhost and enforce authentication and origin checks.
@@ -503,6 +515,8 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Output encoding is context-aware for every sink, including HTML. **(CoSAI)**
 - [ ] Commands and operations are allowlisted.
 - [ ] Deserialization is schema-validated with hard code/data isolation. **(NSA CSI)**
+- [ ] The gateway parses arguments once, rejects duplicate keys, and forwards the parsed object it checked. **(mcp-gateway)**
+- [ ] Stdio servers start with a closed environment and path rules are enforced at the gateway. **(mcp-gateway)**
 - [ ] Tool execution is confined by OS-level sandboxing (seccomp, AppArmor, SELinux, AppContainers). **(NSA CSI)**
 - [ ] Agents do not run with unnecessary root or administrator privileges.
 
@@ -574,7 +588,7 @@ The controls above apply to every deployment. Several of them are conditional on
 - [ ] Sensitive context is classified and tagged at ingestion.
 - [ ] Tool results are minimized to needed fields and redacted before entering context. **(CoSAI)**
 - [ ] Context has enforced TTLs and automatic purging.
-- [ ] Tenant-isolation tests run in CI.
+- [ ] Tenant-isolation tests run in CI and through every proxy hop. **(mcp-gateway)**
 
 ### Availability **(NSA CSI)**
 
@@ -682,3 +696,4 @@ A mature MCP security program continuously performs five functions:
 20. LangChain. *Improve LLM-as-judge evaluators using human feedback*. LangSmith documentation. https://docs.langchain.com/langsmith/improve-judge-evaluator-feedback
 21. Braintrust. *LLM-as-a-judge*. Encyclopedia entry. https://braintrust.dev/encyclopedia/llm-as-a-judge
 22. Birkholz, Thaler, Richardson, Smith, Pan. *Remote ATtestation procedureS (RATS) Architecture*. RFC 9334, January 2023. https://datatracker.ietf.org/doc/rfc9334/
+23. OpenZiti. *mcp-gateway*, v0.1.11, commit 8f99623, 25 August 2026, Apache-2.0. `aggregator/policy.go`, `aggregator/environment.go`, `aggregator/namespace.go`, `gateway/session.go`, and `CHANGELOG.md`. https://github.com/openziti/mcp-gateway
